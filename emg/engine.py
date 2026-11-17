@@ -134,6 +134,9 @@ class Engine(threading.Thread):
                 self.filter.reset()
                 self._reset_link()
                 self.status, self.status_msg = "connecting", ""
+                if self.mode != "emg":   # a fresh session always starts in normal mode
+                    self.mode = "emg"
+                    self._broadcast(self._state_json())
             chunk = None
         else:
             chunk = self.source.read()

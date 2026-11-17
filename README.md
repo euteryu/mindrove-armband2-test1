@@ -4,6 +4,8 @@ Check that a MindRove Armband 2 works properly, watch its signals, and teach it 
 Built on MindRove's official Python SDK. Background findings are in
 [docs/LOGBOOK.md](docs/LOGBOOK.md).
 
+**Testing with the real band? Follow [docs/TESTING.md](docs/TESTING.md)** step by step.
+
 ## Run it
 
 ```
