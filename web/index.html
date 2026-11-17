@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MindRove Lab</title>
+<style>
+:root{
+  --bg:#0f1216; --panel:#181d24; --panel2:#1f262f; --line:#2b3440; --text:#e7ecf2; --dim:#93a0b0;
+  --accent:#4cc2ff; --ok:#3ecf8e; --warn:#f5b83d; --bad:#ff6b6b;
+}
+@media (prefers-color-scheme: light){:root{
+  --bg:#f3f5f8; --panel:#ffffff; --panel2:#eef1f5; --line:#d5dbe3; --text:#17202b; --dim:#5b6877;
+  --accent:#0b7fc4; --ok:#128a57; --warn:#a56a00; --bad:#c93434;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,"Segoe UI",Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+h1{font-size:18px;margin:0 8px 0 0}
+h2{font-size:16px;margin:0 0 8px}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:99px;background:var(--panel2);font-size:13px;white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--dim)}
+.dim{color:var(--dim)} .small{font-size:13px}
+nav{display:flex;gap:4px;padding:10px 20px 0}
+nav button{background:none;border:none;border-bottom:3px solid transparent;color:var(--dim);font:inherit;font-weight:600;padding:8px 14px;cursor:pointer}
+nav button.on{color:var(--text);border-color:var(--accent)}
+main{padding:16px 20px 40px;max-width:1280px;margin:auto}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.grid{display:grid;gap:16px}
+.two{grid-template-columns:minmax(0,1fr) 340px}
+@media (max-width:900px){.two{grid-template-columns:1fr}}
+button.btn{background:var(--accent);color:#04121c;border:none;border-radius:9px;padding:10px 18px;font:inherit;font-weight:700;cursor:pointer}
+button.btn.ghost{background:var(--panel2);color:var(--text);font-weight:600}
+button.btn:disabled{opacity:.45;cursor:not-allowed}
+select,input{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit}
+canvas{display:block;width:100%}
+#banner{margin:14px 20px 0;padding:12px 16px;border-radius:10px;border:1px solid var(--warn);background:var(--panel)}
+#banner ul{margin:6px 0 0;padding-left:20px}
+#simbar{margin:10px 20px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:99px;padding:5px 12px;font-size:14px;cursor:default}
+.chip button{background:none;border:none;color:var(--dim);cursor:pointer;font-size:15px;padding:0}
+button.chip{cursor:pointer;color:var(--text);font:inherit;font-size:14px}
+button.chip.on{border-color:var(--accent);color:var(--accent)}
+#proto{margin:14px 20px 0;border:2px solid var(--accent);text-align:center}
+#proto .emoji{font-size:74px;line-height:1.1}
+#proto .phase{font-size:15px;font-weight:800;letter-spacing:.12em}
+#proto .text{font-size:22px;font-weight:650;margin:4px auto 10px;max-width:640px}
+#proto .count{font-size:44px;font-weight:800;font-variant-numeric:tabular-nums}
+.bar{height:9px;border-radius:9px;background:var(--panel2);overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--accent);border-radius:9px;width:0}
+.badge{display:inline-block;border-radius:6px;padding:2px 9px;font-weight:800;font-size:12.5px;letter-spacing:.04em;border:1.5px solid}
+.PASS{color:var(--ok)} .WARN{color:var(--warn)} .FAIL{color:var(--bad)}
+.chgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin:14px 0}
+.chcard{background:var(--panel2);border-radius:10px;padding:12px;border-left:5px solid}
+.chcard .nums{display:flex;gap:14px;margin:8px 0 6px;font-variant-numeric:tabular-nums}
+.chcard .nums b{display:block;font-size:17px}
+table{border-collapse:collapse;width:100%}
+td,th{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:13px}
+.conf td,.conf th{text-align:center;border:1px solid var(--line);font-variant-numeric:tabular-nums}
+#predBig{font-size:84px;line-height:1.05;text-align:center}
+#predLabel{font-size:30px;font-weight:750;text-align:center}
+.prow{display:grid;grid-template-columns:110px 1fr 46px;gap:8px;align-items:center;margin:6px 0;font-size:14px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.hide{display:none!important}
+ol.steps{margin:6px 0 14px;padding-left:22px}
+</style>
+</head>
+<body>
+<header>
+  <h1>MindRove Lab</h1>
+  <span class="pill"><span class="dot" id="stDot"></span><span id="stText">Connecting…</span></span>
+  <span class="pill">Rate <b id="stRate">–</b></span>
+  <span class="pill">Dropped <b id="stLoss">–</b></span>
+  <span class="pill">Battery <b id="stBatt">–</b></span>
+  <span class="pill dim" id="stSrc"></span>
+</header>
+
+<div id="banner" class="hide"></div>
+<div id="simbar" class="hide"></div>
+
+<section id="proto" class="card hide">
+  <div class="small dim" id="pProgress"></div>
+  <div class="emoji" id="pEmoji"></div>
+  <div class="phase" id="pPhase"></div>
+  <div class="text" id="pText"></div>
+  <div class="count" id="pCount"></div>
+  <div class="bar" style="max-width:520px;margin:10px auto"><i id="pBar"></i></div>
+  <div class="small dim" id="pNext"></div>
+  <button class="btn ghost" style="margin-top:10px" onclick="post({op:'cancel'})">Cancel</button>
+</section>
+
+<nav>
+  <button data-tab="live" class="on">Live signal</button>
+  <button data-tab="check">Device check</button>
+  <button data-tab="gest">Gestures</button>
+</nav>
+
+<main>
+<!-- LIVE -->
+<div id="tab-live" class="grid two">
+  <div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <h2 style="margin:0">8 channels, last 5 seconds <span class="dim small" id="scaleLbl"></span></h2>
+      <div class="row small">
+        <label>Scale <select id="scaleSel">
+          <option value="0">Auto</option><option>50</option><option>200</option><option>500</option><option>2000</option>
+        </select></label>
+        <label>Mode <select id="modeSel">
+          <option value="emg">Muscle signal (normal)</option>
+          <option value="impedance">Impedance readout (experimental)</option>
+          <option value="test">Built-in test signal (experimental)</option>
+        </select></label>
+      </div>
+    </div>
+    <canvas id="traces" style="height:520px"></canvas>
+    <p class="small dim" id="modeNote" style="margin:10px 0 0"></p>
+  </div>
+  <div class="grid" style="align-content:start">
+    <div class="card">
+      <h2>Muscle activity around the band</h2>
+      <canvas id="ring" style="height:300px"></canvas>
+      <p class="small dim" style="margin:8px 0 0">Brighter means more activity. To find which pod is which channel, press on one pod with a finger and see which number lights up. The layout drawn here is schematic.</p>
+    </div>
+    <div class="card small">
+      <h2>Motion sensor</h2>
+      <div>Accelerometer <b id="accTxt">–</b></div>
+      <div>Gyroscope <b id="gyroTxt">–</b></div>
+      <div id="impBox" class="hide" style="margin-top:10px">
+        <h2>Impedance readout</h2>
+        <div id="impVals"></div>
+        <p class="dim">Raw values as reported by the band. Which of the 10 values is the reference or bias electrode is not documented, so compare them with each other: one value far above the rest suggests that pod has poor skin contact.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CHECK -->
+<div id="tab-check" class="hide">
+  <div class="card">
+    <h2>Is the armband working properly?</h2>
+    <p style="margin:0">A guided test of about 45 seconds. Follow the prompts; the program measures each channel and judges it for you.</p>
+    <ol class="steps dim">
+      <li>Wear the band snug on the thickest part of your forearm, on slightly damp skin, and wait a minute.</li>
+      <li>Sit with your arm supported and relaxed.</li>
+      <li>You will be asked to relax, make a fist, bend the wrist both ways, then twist the forearm.</li>
+    </ol>
+    <button class="btn" id="checkBtn" onclick="post({op:'check'})">Start device check</button>
+    <span class="small dim" id="checkHint" style="margin-left:10px"></span>
+  </div>
+  <div id="report" class="card hide" style="margin-top:16px"></div>
+</div>
+
+<!-- GESTURES -->
+<div id="tab-gest" class="hide grid two">
+  <div class="grid" style="align-content:start">
+    <div class="card">
+      <h2>Live recognition</h2>
+      <div id="predBig">·</div>
+      <div id="predLabel" class="dim">No model yet</div>
+      <div class="bar" style="max-width:420px;margin:10px auto 14px"><i id="predConf"></i></div>
+      <div id="predProbs"></div>
+    </div>
+    <div class="card hide" id="modelCard"></div>
+  </div>
+  <div class="card" style="align-self:start">
+    <h2>Teach it your gestures</h2>
+    <p class="small dim" style="margin:0 0 10px">You hold each gesture for a few seconds, several rounds. Retrain whenever you take the band off and put it back on.</p>
+    <div id="gestChips" class="row" style="gap:6px"></div>
+    <div class="row" style="margin:10px 0">
+      <input id="gestNew" placeholder="add a gesture" maxlength="24" style="flex:1;min-width:0">
+      <button class="btn ghost" onclick="addGest($('gestNew').value)">Add</button>
+    </div>
+    <div class="small dim">Suggestions:</div>
+    <div id="gestSugg" class="row" style="gap:6px;margin:6px 0 12px"></div>
+    <div class="row small" style="margin-bottom:12px">
+      <label>Rounds <select id="repsSel"><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+      <label>Hold <select id="holdSel"><option value="2">2 s</option><option value="3">3 s</option><option value="4" selected>4 s</option><option value="5">5 s</option></select></label>
+      <span class="dim" id="trainTime"></span>
+    </div>
+    <button class="btn" id="trainBtn" onclick="train()">Record and train</button>
+  </div>
+</div>
+</main>
+
+<script>
+const N = 8, SECS = 5;
+const $ = id => document.getElementById(id);
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'style') e.style.cssText = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  e.append(...kids);
+  return e;
+}
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const post = cmd => fetch('/api/cmd', {method: 'POST', body: JSON.stringify(cmd)}).catch(() => {});
+const nice = s => s.replace(/_/g, ' ');
+
+let S = null, fs = 500, buf = null, lastRms = new Array(N).fill(0), ringRef = 30;
+let gest = [], gestDirty = false, lastTick = 0, streaming = false, simPose = 'rest';
+const SUGGEST = ['rest', 'fist', 'open', 'pinch', 'point', 'thumbs_up', 'wrist_in', 'wrist_out'];
+const MODE_NOTES = {
+  emg: 'Filtered 20–200 Hz with mains hum removed. Relaxed should look flat; squeezing should make clear bursts.',
+  impedance: 'The band is measuring electrode contact instead of muscle signal, so the traces are not EMG. See the readout on the right.',
+  test: 'The band replaces the electrode inputs with its own internal test signal. Every channel should show the same waveform; a channel that differs points at the electronics, not skin contact.'
+};
+const emoji = l => (S && S.step_info[l] ? S.step_info[l][0] : '✋');
+
+/* ---------- tabs ---------- */
+function showTab(name) {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
+  for (const t of ['live', 'check', 'gest']) $('tab-' + t).classList.toggle('hide', t !== name);
+  history.replaceState(null, '', '#' + name);
+  sizeCanvases();
+}
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+if (['check', 'gest'].includes(location.hash.slice(1))) showTab(location.hash.slice(1));
+$('modeSel').onchange = e => post({op: 'mode', mode: e.target.value});
+$('gestNew').onkeydown = e => { if (e.key === 'Enter') addGest(e.target.value); };
+$('repsSel').onchange = $('holdSel').onchange = renderGest;
+
+/* ---------- server stream ---------- */
+const es = new EventSource('/events');
+es.onmessage = ev => { const m = JSON.parse(ev.data); m.t === 'state' ? onState(m) : onTick(m); };
+setInterval(() => { if (Date.now() - lastTick > 2500) setStatus('error', 'App not running (start app.py again)'); }, 1000);
+
+function onState(m) {
+  const first = !S;
+  S = m; fs = m.fs;
+  if (!buf) buf = Array.from({length: N}, () => new Float32Array(fs * SECS));
+  $('stSrc').textContent = m.source;
+  $('modeSel').value = m.mode;
+  $('modeNote').textContent = MODE_NOTES[m.mode];
+  $('impBox').classList.toggle('hide', m.mode !== 'impedance');
+  if (first || !gestDirty) { gest = m.gestures.slice(); $('repsSel').value = m.reps; $('holdSel').value = m.hold; }
+  $('checkHint').textContent = m.notice || '';
+  renderGest(); renderReport(); renderModel(); renderSim();
+}
+
+function setStatus(kind, text) {
+  $('stDot').style.background = css(kind === 'streaming' ? '--ok' : kind === 'error' ? '--bad' : '--warn');
+  $('stText').textContent = text;
+}
+
+function onTick(m) {
+  lastTick = Date.now();
+  streaming = m.status === 'streaming';
+  setStatus(m.status, {streaming: 'Receiving data', connecting: 'Connecting…', no_data: 'No data from armband', error: 'Error'}[m.status]);
+  $('stRate').textContent = streaming ? m.link.rate.toFixed(0) + ' Hz' : '–';
+  $('stLoss').textContent = streaming ? m.link.loss_pct.toFixed(2) + ' %' : '–';
+  $('stBatt').textContent = m.link.battery == null || !streaming ? '–' : m.link.battery.toFixed(2);
+  renderBanner(m);
+  $('checkBtn').disabled = $('trainBtn').disabled = !streaming || !!m.proto;
+
+  const n = m.emg.length ? m.emg[0].length : 0;
+  if (n && buf) for (let c = 0; c < N; c++) {
+    const b = buf[c], k = Math.min(n, b.length);
+    b.copyWithin(0, k);
+    b.set(m.emg[c].slice(n - k), b.length - k);
+  }
+  if (m.rms) lastRms = m.rms;
+  if (m.acc) { $('accTxt').textContent = m.acc.map(v => v.toFixed(2)).join('  '); $('gyroTxt').textContent = m.gyro.map(v => v.toFixed(1)).join('  '); }
+  if (m.imp) $('impVals').replaceChildren(...m.imp.map((v, i) => el('div', {}, `Value ${i + 1}: `, el('b', {}, String(v)))));
+  renderProto(m.proto);
+  renderPred(m.pred, m.proto);
+}
+
+function renderBanner(m) {
+  const b = $('banner');
+  if (m.status === 'streaming' || !S) return b.classList.add('hide');
+  b.classList.remove('hide');
+  if (m.status === 'error') return b.replaceChildren(el('b', {}, 'Problem talking to the armband: '), m.status_msg);
+  b.replaceChildren(el('b', {}, 'Waiting for data from the armband.'), ' Check these, the app keeps retrying on its own:',
+    el('ul', {},
+      el('li', {}, 'The band is switched on and charged.'),
+      el('li', {}, "This computer's Wi-Fi is connected to the armband's own network."),
+      el('li', {}, 'MindRove Connect and any other program using the band are closed.'),
+      el('li', {}, 'Python is allowed through the firewall on both private and public networks.')));
+}
+
+/* ---------- guided prompt ---------- */
+function renderProto(p) {
+  $('proto').classList.toggle('hide', !p);
+  if (!p) return;
+  const hold = p.phase === 'hold', total = hold ? p.step.hold : p.step.prep;
+  $('pProgress').textContent = `${p.kind === 'check' ? 'Device check' : 'Gesture training'}: step ${p.i + 1} of ${p.n}`;
+  $('pEmoji').textContent = p.step.emoji;
+  $('pPhase').textContent = hold ? 'HOLD IT' : 'GET READY';
+  $('pPhase').style.color = css(hold ? '--ok' : '--warn');
+  $('pText').textContent = p.step.text;
+  $('pCount').textContent = Math.ceil(p.left);
+  $('pBar').style.width = (100 * (1 - p.left / total)) + '%';
+  $('pBar').style.background = css(hold ? '--ok' : '--warn');
+  $('pNext').textContent = p.next ? 'Next: ' + nice(p.next) : 'Last step';
+}
+
+/* ---------- device check report ---------- */
+const badge = v => el('span', {class: 'badge ' + v}, {PASS: '✓ PASS', WARN: '! CHECK', FAIL: '✕ FAIL'}[v]);
+function renderReport() {
+  const r = S.report, box = $('report');
+  box.classList.toggle('hide', !r);
+  if (!r) return;
+  const num = (v, label) => el('div', {}, el('b', {}, String(v)), el('span', {class: 'small dim'}, label));
+  box.replaceChildren(
+    el('div', {class: 'row'}, el('h2', {style: 'margin:0'}, 'Result'), badge(r.overall), el('span', {class: 'small dim'}, `${r.when} · ${r.source}`)),
+    el('p', {}, r.summary),
+    el('div', {class: 'chgrid'}, ...r.channels.map(c =>
+      el('div', {class: 'chcard ' + c.verdict, style: 'border-color:currentColor'},
+        el('div', {class: 'row', style: 'justify-content:space-between;color:var(--text)'}, el('b', {}, 'Channel ' + c.ch), badge(c.verdict)),
+        el('div', {class: 'nums', style: 'color:var(--text)'}, num(c.rest_uv, 'µV at rest'), num(c.active_uv, 'µV active'), num(c.gain_db + ' dB', 'response')),
+        el('div', {class: 'small', style: 'color:var(--text)'}, c.notes.join(' ')),
+        el('div', {class: 'small dim'}, `Strongest during ${nice(c.best_step)} · mains hum ${c.hum_pct}% of rest signal`)))),
+    el('table', {}, el('tbody', {}, ...r.device.map(d =>
+      el('tr', {}, el('td', {}, el('b', {}, d.name)), el('td', {}, badge(d.verdict)), el('td', {}, d.value), el('td', {class: 'small dim'}, d.note))))),
+    el('p', {class: 'small dim', style: 'margin-bottom:0'}, 'Response is how much stronger the channel gets during effort than at rest: 12 dB or more passes, under 6 dB fails. Report and raw recording saved in ', el('code', {}, S.report_dir || '')));
+}
+
+/* ---------- gestures ---------- */
+function addGest(name) {
+  name = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  if (name && !gest.includes(name)) { gest.push(name); gestDirty = true; }
+  $('gestNew').value = '';
+  renderGest();
+}
+function renderGest() {
+  $('gestChips').replaceChildren(...gest.map(g => el('span', {class: 'chip'}, emoji(g) + ' ' + nice(g),
+    el('button', {title: 'remove', onclick: () => { gest = gest.filter(x => x !== g); gestDirty = true; renderGest(); }}, '×'))));
+  $('gestSugg').replaceChildren(...SUGGEST.filter(g => !gest.includes(g)).map(g =>
+    el('button', {class: 'chip', onclick: () => addGest(g)}, '+ ' + nice(g))));
+  const secs = gest.length * (+$('repsSel').value) * (+$('holdSel').value + 2);
+  $('trainTime').textContent = gest.length < 2 ? 'Add at least two gestures' : `about ${Math.round(secs)} s of recording`;
+  if (S) renderSim();
+}
+function train() {
+  gestDirty = false;
+  post({op: 'train', gestures: gest, reps: +$('repsSel').value, hold: +$('holdSel').value});
+}
+function renderPred(pred, proto) {
+  const names = S && S.model ? S.model.names : [];
+  if (!pred) {
+    $('predBig').textContent = '·';
+    $('predLabel').textContent = proto ? 'Paused while recording' : names.length ? 'Waiting for data' : 'No model yet. Teach it your gestures first.';
+    $('predLabel').className = 'dim'; $('predConf').style.width = '0';
+    $('predProbs').replaceChildren();
+    return;
+  }
+  $('predBig').textContent = emoji(pred.label);
+  $('predLabel').textContent = nice(pred.label);
+  $('predLabel').className = '';
+  $('predConf').style.width = (100 * pred.conf) + '%';
+  const rows = $('predProbs');
+  if (rows.children.length !== names.length)
+    rows.replaceChildren(...names.map(g => el('div', {class: 'prow'}, el('span', {}, emoji(g) + ' ' + nice(g)), el('div', {class: 'bar'}, el('i', {})), el('span', {class: 'dim'}, ''))));
+  pred.probs.forEach((p, i) => {
+    rows.children[i].querySelector('i').style.width = (100 * p) + '%';
+    rows.children[i].lastChild.textContent = Math.round(100 * p) + '%';
+  });
+}
+function renderModel() {
+  const m = S.model, box = $('modelCard');
+  box.classList.toggle('hide', !m);
+  if (!m) return;
+  const acc = m.accuracy == null ? null : Math.round(100 * m.accuracy);
+  const verdict = acc == null ? '' : acc >= 90 ? 'Good separation.' : acc >= 75 ? 'Usable. Check the table for gestures that get mixed up.' : 'Poor separation. Reseat the band, hold gestures more firmly, or drop gestures that look alike.';
+  const rows = m.confusion.map((row, i) => {
+    const tot = row.reduce((a, b) => a + b, 0) || 1;
+    return el('tr', {}, el('th', {style: 'text-align:left'}, emoji(m.names[i]) + ' ' + nice(m.names[i])), ...row.map((v, j) => {
+      const f = v / tot;
+      return el('td', {style: `background:color-mix(in srgb, ${css(i === j ? '--ok' : '--bad')} ${Math.round(f * 55)}%, transparent)`}, f ? Math.round(100 * f) + '%' : '');
+    }));
+  });
+  box.replaceChildren(
+    el('h2', {}, 'How well it tells your gestures apart'),
+    el('div', {class: 'row'}, el('span', {style: 'font-size:34px;font-weight:800'}, acc == null ? '–' : acc + '%'), el('span', {}, verdict)),
+    el('p', {class: 'small dim'}, `Measured on rounds the model did not learn from (${m.rounds} rounds, ${m.windows} samples). Each row is a gesture you made; columns show what it was recognised as.`),
+    el('table', {class: 'conf'}, el('thead', {}, el('tr', {}, el('th', {}, ''), ...m.names.map(g => el('th', {title: nice(g)}, emoji(g) + ' ' + nice(g))))), el('tbody', {}, ...rows)));
+}
+function renderSim() {
+  const bar = $('simbar');
+  bar.classList.toggle('hide', !S.sim);
+  if (!S.sim) return;
+  const poses = [...new Set(['rest', ...gest, ...(S.model ? S.model.names : [])])];
+  bar.replaceChildren(el('span', {class: 'small dim'}, 'Simulator, no hardware. Make the fake hand do:'),
+    ...poses.map(g => el('button', {class: 'chip' + (g === simPose ? ' on' : ''), onclick: () => { simPose = g; post({op: 'pose', label: g}); }}, emoji(g) + ' ' + nice(g))));
+}
+
+/* ---------- drawing ---------- */
+function sizeCanvases() {
+  for (const c of [$('traces'), $('ring')]) {
+    const r = c.getBoundingClientRect(), d = devicePixelRatio || 1;
+    if (r.width && (c.width !== Math.round(r.width * d) || c.height !== Math.round(r.height * d))) {
+      c.width = Math.round(r.width * d); c.height = Math.round(r.height * d);
+    }
+  }
+}
+addEventListener('resize', sizeCanvases);
+
+let autoScale = 50;
+function drawTraces() {
+  const c = $('traces'), g = c.getContext('2d'), d = devicePixelRatio || 1;
+  const W = c.width, H = c.height, rowH = H / N, left = 46 * d;
+  g.clearRect(0, 0, W, H);
+  if (!buf || !W) return;
+  let scale = +$('scaleSel').value;
+  if (!scale) {
+    let mx = 0;
+    for (const b of buf) for (let i = 0; i < b.length; i += 3) { const a = Math.abs(b[i]); if (a > mx) mx = a; }
+    autoScale += 0.08 * (Math.max(20, mx * 1.15) - autoScale);
+    scale = autoScale;
+  }
+  $('scaleLbl').textContent = `· each row ±${scale.toFixed(0)} µV`;
+  g.font = `${12 * d}px system-ui`; g.textBaseline = 'middle';
+  const line = css('--line'), dim = css('--dim'), acc = css('--accent');
+  const len = buf[0].length, plotW = W - left, per = len / plotW;
+  for (let ch = 0; ch < N; ch++) {
+    const mid = rowH * (ch + 0.5), b = buf[ch];
+    g.strokeStyle = line; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(left, mid); g.lineTo(W, mid); g.stroke();
+    g.fillStyle = dim; g.fillText('Ch ' + (ch + 1), 6 * d, mid);
+    g.strokeStyle = acc; g.lineWidth = d; g.beginPath();
+    for (let x = 0; x < plotW; x++) {
+      let lo = Infinity, hi = -Infinity;
+      const a = Math.floor(x * per), e = Math.max(a + 1, Math.floor((x + 1) * per));
+      for (let i = a; i < e; i++) { const v = b[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+      const k = rowH * 0.46 / scale;
+      const y1 = mid - Math.max(-scale, Math.min(scale, hi)) * k, y2 = mid - Math.max(-scale, Math.min(scale, lo)) * k;
+      g.moveTo(left + x + 0.5, y1); g.lineTo(left + x + 0.5, y2 + 0.5);
+    }
+    g.stroke();
+  }
+}
+function drawRing() {
+  const c = $('ring'), g = c.getContext('2d'), d = devicePixelRatio || 1;
+  const W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H);
+  if (!W) return;
+  const R = Math.min(W, H) * 0.34, pod = Math.min(W, H) * 0.105, cx = W / 2, cy = H / 2;
+  ringRef = Math.max(30, ringRef * 0.997, ...lastRms);
+  g.strokeStyle = css('--line'); g.lineWidth = 3 * d;
+  g.beginPath(); g.arc(cx, cy, R, 0, 7); g.stroke();
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let ch = 0; ch < N; ch++) {
+    const a = -Math.PI / 2 + ch * 2 * Math.PI / N, x = cx + R * Math.cos(a), y = cy + R * Math.sin(a);
+    const lvl = Math.min(1, Math.sqrt(lastRms[ch] / ringRef));
+    g.fillStyle = css('--panel2'); g.beginPath(); g.arc(x, y, pod, 0, 7); g.fill();
+    g.globalAlpha = lvl; g.fillStyle = css('--accent'); g.beginPath(); g.arc(x, y, pod, 0, 7); g.fill();
+    g.globalAlpha = 1; g.strokeStyle = css('--line'); g.lineWidth = d; g.stroke();
+    g.fillStyle = css('--text'); g.font = `700 ${14 * d}px system-ui`; g.fillText(String(ch + 1), x, y - 7 * d);
+    g.font = `${10.5 * d}px system-ui`; g.fillText(lastRms[ch].toFixed(0) + ' µV', x, y + 9 * d);
+  }
+  g.fillStyle = css('--dim'); g.font = `${12 * d}px system-ui`;
+  g.fillText(streaming ? 'activity now' : 'no data', cx, cy);
+}
+function frame() { sizeCanvases(); drawTraces(); drawRing(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
