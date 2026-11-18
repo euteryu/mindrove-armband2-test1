@@ -296,9 +296,75 @@ table([
      "Less or no per-session retraining."],
 ], [12, 98, 60])
 
+# ---------------------------------------------------------------- benchmark paper
+story.append(PageBreak())
+H1("7. The method to aim for: Kaifosh &amp; Reardon, Nature 2025")
+P("<b>A generic non-invasive neuromotor interface for human-computer interaction.</b> Reality Labs at Meta. "
+  "Nature 645:702–711, 2025. doi:10.1038/s41586-025-09255-w. Code and data are public.", "small")
+P("This is the best methodological model for your project. It tackles exactly your problem (discrete hand "
+  "gestures that trigger actions, with everything else ignored) using a dry-electrode band, and its "
+  "evaluation is the most rigorous in the field. You cannot copy its scale, but you can copy its design.")
+H2("What they did")
+table([
+    ["Part", "Their approach"],
+    ["Device", "Dry-electrode wristband: 48 electrode pins forming 16 bipolar channels, sampled at 2 kHz, "
+     "noise 2.46 µV rms, four band sizes, put on or taken off in seconds."],
+    ["Data", "162 to 6,627 participants depending on the task. Gestures were prompted by laptop software that logged "
+     "the prompt times; an alignment step then found when each gesture actually happened, because people react "
+     "late and unevenly."],
+    ["Variation built in", "The band was taken off and slightly repositioned between sessions, so the model "
+     "learns to cope with electrode shift. Handwriting was also recorded in several postures (seated and standing)."],
+    ["Discrete gestures", "Nine: index and middle finger press/release, thumb tap, thumb swipes in four directions, "
+     "prompted in random order with random gaps between them."],
+    ["Turning output into actions", "A gesture fires only when the model’s probability rises above a threshold "
+     "(0.5 online), followed by debouncing and a state machine so that one gesture produces one event."],
+    ["Offline test", "Participants never seen in training: 100 for discrete gestures (22 for the wrist task, "
+     "50 for handwriting). The headline offline figure is over 90% classification accuracy."],
+    ["Online test (closed loop)", "New, untrained people used the live system: 24 for discrete gestures. "
+     "Measured: first-hit probability, completions per second, confusion rate and early releases. Result: "
+     "0.88 gesture detections per second."],
+    ["Same code online and offline", "One processing engine was used both while recording and while running "
+     "models, so offline results transfer to live use."],
+    ["Scaling and personalisation", "Performance improved steadily with more training participants. Fine-tuning "
+     "on one person with 1–20 minutes of data improved handwriting by 16%. When a model is trained on a single "
+     "person, tested on a held-out session, the person’s own model beat other people’s models for 98% of people."],
+], [38, 132])
+H2("The principles to copy")
+numbered([
+    "<b>Test on what the model has never seen</b>: whole sessions or days, ideally whole people. Never "
+    "random windows from the same take.",
+    "<b>Build variation into training</b>: take the band off and put it back between sessions, vary posture, "
+    "randomise gesture order and timing.",
+    "<b>Label carefully</b>: log when you prompted, then align to when the muscle actually fired.",
+    "<b>Judge the live system</b>, with people in the loop, using event metrics (hits, misses, wrong gestures, "
+    "time to complete) rather than offline accuracy alone.",
+    "<b>Turn probabilities into events deliberately</b>: threshold, debounce, one event per gesture.",
+    "<b>Use one code path</b> for recording, training and live use.",
+    "<b>Report how performance scales</b> with the amount of data, and what personalisation adds.",
+])
+H2("Scaled down for one person with one MindRove band")
+table([
+    ["Their practice", "Your version"],
+    ["Thousands of participants", "You, over many sessions and days (later a few volunteers). Report "
+     "within-session, across-session and across-day results separately."],
+    ["Band repositioned between sessions", "Take the band off and back on between some training rounds; "
+     "record on different days."],
+    ["Randomised prompts, logged times, alignment", "Our app prompts and logs every sample with the prompt; it "
+     "already trims reaction time. Add random order and random gaps."],
+    ["Lots of non-gesture data", "A guided minute of ordinary activity per session as the silent class."],
+    ["Threshold, debounce, state machine", "Confidence threshold, hold time, cooldown (section 5)."],
+    ["Closed-loop test with event metrics", "Hit rate, wrong-gesture rate and false triggers per minute "
+     "during a fixed 5-minute routine."],
+    ["Public data and code", "Keep your recordings and scripts; publish them with your results."],
+], [55, 115])
+P("Note: their device (16 channels at 2 kHz at the wrist) differs from MindRove (8 channels at 500 Hz on the "
+  "forearm), so their models and data cannot be used directly with your band, but the methods carry over. "
+  "Their data is licensed for non-commercial use (CC BY-NC-SA 4.0). This summary was checked against the "
+  "article’s full text; architecture details are left out because they could not be confirmed.", "small")
+
 # ---------------------------------------------------------------- papers
 story.append(PageBreak())
-H1("7. Reading list")
+H1("8. Reading list")
 P("Checked against the publisher or preprint pages on 18 November 2026, except where marked "
   "<i>[via review]</i>: those details come from the iScience review’s description and the original was not "
   "opened. Start with the items marked [Start here].", "small")
@@ -379,7 +445,7 @@ paper("Deep learning for electromyographic hand gesture signal classification us
       "reduced degradation over time.",
       "The same idea as NaviFlame (pretrained features plus a small per-user part), done and evaluated properly. "
       "Also shows that a person learning from live feedback is part of the system.")
-paper("A generic non-invasive neuromotor interface for human-computer interaction",
+paper("<font color='#0b6fb8'>[Start here]</font> A generic non-invasive neuromotor interface for human-computer interaction (see section 7)",
       "Kaifosh P., Reardon T. R. (Reality Labs, Meta), Nature 645:702–711, 2025. doi:10.1038/s41586-025-09255-w",
       "Built a dry-electrode EMG wristband and trained models on data from a very large number of people, so "
       "gestures, cursor control and handwriting worked for new users without calibration. Code is public.",
