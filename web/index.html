@@ -371,7 +371,7 @@ function renderReport() {
         el('div', {class: 'row', style: 'justify-content:space-between;color:var(--text)'}, el('b', {}, 'Channel ' + c.ch), badge(c.verdict)),
         el('div', {class: 'nums', style: 'color:var(--text)'}, num(c.rest_uv, 'µV at rest'), num(c.active_uv, 'µV active'), num(c.gain_db + ' dB', 'response')),
         el('div', {class: 'small', style: 'color:var(--text)'}, c.notes.join(' ')),
-        el('div', {class: 'small dim'}, `Strongest during ${nice(c.best_step)} · mains hum ${c.hum_pct}% of rest signal`)))),
+        el('div', {class: 'small dim'}, `Strongest during ${nice(c.best_step)} · mains hum ${c.hum_uv} µV (filtered out)`)))),
     el('table', {}, el('tbody', {}, ...r.device.map(d =>
       el('tr', {}, el('td', {}, el('b', {}, d.name)), el('td', {}, badge(d.verdict)), el('td', {}, d.value), el('td', {class: 'small dim'}, d.note))))),
     el('p', {class: 'small dim', style: 'margin-bottom:0'}, 'Response is how much stronger the channel gets during effort than at rest: 12 dB or more passes, under 6 dB fails. Report and raw recording saved in ', el('code', {}, S.report_dir || '')));

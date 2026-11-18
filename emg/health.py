@@ -61,7 +61,11 @@ def analyze(phases, link, fs, mains):
 
     raw_still = rest["raw"][:, still] if still.sum() >= fs else rest["raw"]
     f, p = signal.welch(raw_still - raw_still.mean(1, keepdims=True), fs, nperseg=min(fs, raw_still.shape[1]), axis=1)
-    hum = p[:, np.abs(f - mains) <= 2].sum(1) / np.maximum(p[:, f >= 10].sum(1), 1e-12)
+    # Mains hum in microvolts (RMS of the +-2 Hz band around mains). The app's notch
+    # filter removes it, and at a quiet rest it is naturally most of the raw signal, so
+    # it is judged only against the other channels: one pod humming far more than the
+    # rest points to poor contact at that pod.
+    hum = np.sqrt(p[:, np.abs(f - mains) <= 2].sum(1) * (f[1] - f[0]))
 
     channels = []
     for c in range(n_ch):
@@ -85,8 +89,10 @@ def analyze(phases, link, fs, mains):
                 flag(WARN, "Weak reaction to muscle effort (6-12 dB above rest).")
             if rest_rms[c] > 3 * others and rest_rms[c] > 10:
                 flag(WARN, "Much noisier at rest than the other channels: usually poor skin contact.")
-            if hum[c] > 0.5:
-                flag(WARN, f"Mostly {mains} Hz mains hum at rest: usually poor skin contact.")
+            hum_others = np.median(np.delete(hum, c))
+            if hum[c] > 5 * hum_others and hum[c] > 50:
+                flag(WARN, f"Picks up far more {mains} Hz mains hum than the other channels: "
+                           "usually poor skin contact at this pod.")
         if not notes:
             notes.append("Quiet at rest and clearly responds to effort.")
         channels.append({
@@ -95,7 +101,7 @@ def analyze(phases, link, fs, mains):
             "active_uv": round(float(best[c]), 2),
             "best_step": str(best_step[c]),
             "gain_db": round(float(gain_db), 1),
-            "hum_pct": round(float(100 * hum[c]), 1),
+            "hum_uv": round(float(hum[c]), 1),
         })
 
     device = []
@@ -146,10 +152,10 @@ def analyze(phases, link, fs, mains):
 
 def to_text(report):
     lines = [f"MindRove armband check: {report['overall']}", report["summary"], "",
-             "ch  verdict  rest uV  active uV  gain dB  hum %  notes"]
+             "ch  verdict  rest uV  active uV  gain dB  hum uV  notes"]
     for c in report["channels"]:
         lines.append(f"{c['ch']:<3} {c['verdict']:<8} {c['rest_uv']:<8} {c['active_uv']:<10} "
-                     f"{c['gain_db']:<8} {c['hum_pct']:<6} {' '.join(c['notes'])}")
+                     f"{c['gain_db']:<8} {c['hum_uv']:<7} {' '.join(c['notes'])}")
     lines.append("")
     for d in report["device"]:
         lines.append(f"{d['name']:<16} {d['verdict']:<5} {d['value']:<12} {d['note']}")

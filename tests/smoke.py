@@ -60,7 +60,7 @@ def main():
     v = {c["ch"]: c for c in r["channels"]}
     expect(v[3]["verdict"] == "FAIL", "dead channel 3 fails")
     expect(v[2]["verdict"] != "PASS" and v[2]["gain_db"] < 12, "weak channel 2 flagged")
-    expect(v[5]["verdict"] != "PASS" and v[5]["hum_pct"] > 50, "humming channel 5 flagged")
+    expect(v[5]["verdict"] != "PASS" and any("hum" in n for n in v[5]["notes"]), "humming channel 5 flagged")
     expect(v[7]["verdict"] != "PASS", "noisy channel 7 flagged")
     expect(all(v[c]["verdict"] == "PASS" for c in (1, 4, 6, 8)), "untouched channels still pass")
     d = {x["name"]: x for x in r["device"]}

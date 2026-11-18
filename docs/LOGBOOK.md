@@ -210,3 +210,23 @@ From an earlier research chat. Titles are as given there; check before citing.
 - Added continuous session recording (`emg/recorder.py`, panel above the tabs). Checked on
   the simulator: every sample written, activity/prompt labels switch at the right
   sample, notes tied to sample numbers. **[verified on simulator only]**
+
+### 12. Second real-band session (2026-11-18)
+
+- Two device checks (band reseated, second one rotated by one pod): no channel FAILs,
+  rest 4-15 uV after filtering, responses 11-28 dB. Channel 7's failure on 2026-11-17 did
+  not come back, so it was skin contact, not a faulty pod. **[verified]**
+- The hum warning fired on all 8 channels. Cause: hum was judged as a share of the rest
+  signal, and once rest is quiet (~5 uV) the 10-290 uV of raw 50 Hz hum is naturally most
+  of it. The notch filter removes hum anyway. Fixed: hum is now reported in uV and only
+  warns when a channel picks up >5x the median of the others (and >50 uV). **[verified]**
+- Gestures retrained: 72% held out. Rest and wrist in were confused (25% / 39%).
+- 70 s recording: 4-12 uV at rest once settled. One event at 9.5-11 s put 1000-3000 uV
+  on all 8 channels at once with a gyroscope spike (common to all channels, so the shared
+  reference/bias contact, not one pod). During open and the wrist movements the raw
+  electrode offset moved by 20-80 mV within 0.5 s: the electrodes shift or change pressure
+  under the strap, as the user felt. No channel sat at a fixed rail value. **[verified]**
+- MindRove's own NaviFlame (github.com/MindRove/NaviFlame): pretrained deep feature
+  extractor + per-user MLP, TensorFlow 2.12, Python 3.7-3.10 (this laptop has 3.13, so it
+  needs its own Python 3.10 environment). No accuracy figures or licence in the README.
+  **[read]**
