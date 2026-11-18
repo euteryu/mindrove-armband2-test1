@@ -186,3 +186,27 @@ From an earlier research chat. Titles are as given there; check before citing.
   on the simulator is never loaded for the real band.
 - **Still not done: any run against the real armband.** Section 6 lists what to look at
   on that first run.
+
+### 11. First real-band run (2026-11-17) and the device-check fix
+
+- Gesture training on the real band: 84% held-out accuracy over 5 gestures (chance is
+  20%): rest 99%, fist 91%, wrist in 94%, wrist out 75%, open 61%. Open and wrist out are
+  confused with each other (both use the forearm extensors). Live recognition flickers
+  when the arm moves, because training was done with the arm still. **[verified]**
+- The first device check said 7 of 8 channels FAIL. Cause: the arm moved for about 3 s of
+  the 6 s rest step (gyroscope up to ~80x its still level), and the check took one RMS
+  over the whole step, so rest looked louder than effort. Not a band fault. **[verified]**
+- Fix in `emg/health.py`: rest and effort levels are now the median of 200 ms window
+  RMS; the moving part of the rest step (found from the gyroscope, against the rotate
+  step's level) is left out of the baseline, with a "Still at rest" row in the report;
+  accelerometer/gyroscope verdicts use the still part as their reference.
+- The same recording re-scored with the fix: rest 8-16 uV on 7 channels; ch4, ch5, ch8
+  PASS (13-16 dB), ch1-3 WARN (8-11 dB), ch6 FAIL (5.7 dB), ch7 FAIL (39 uV at rest, 83% of
+  it 50 Hz hum: poor contact on that pod). Accelerometer 37x, gyroscope 41x: PASS.
+  Still to do: rerun with the arm still, then with the band rotated one pod, to tell a ch7
+  hardware fault from skin contact.
+- The pass/fail thresholds (6 and 12 dB) are our own engineering judgement, not
+  MindRove's specification. **[assumed]**
+- Added continuous session recording (`emg/recorder.py`, panel above the tabs). Checked on
+  the simulator: every sample written, activity/prompt labels switch at the right
+  sample, notes tied to sample numbers. **[verified on simulator only]**

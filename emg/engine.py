@@ -18,6 +18,7 @@ import numpy as np
 from . import health
 from .dsp import HOP, WIN, StreamFilter, features, rms, window_features
 from .gestures import GestureModel
+from .recorder import Recorder
 
 TICK = 0.05
 TRIM_START = 0.8   # seconds dropped from the start of each hold (reaction time)
@@ -67,6 +68,7 @@ class Engine(threading.Thread):
         self.model, self.p_smooth = None, None
         self.gestures, self.reps, self.hold = list(DEFAULT_GESTURES), 3, 4.0
         self.notice = ""
+        self.rec, self.last_rec_dir = None, None
         self._load_model()
 
     # ---- pub/sub -------------------------------------------------------------
@@ -97,6 +99,7 @@ class Engine(threading.Thread):
             "model": self.model.summary if self.model else None,
             "gestures": self.gestures, "reps": self.reps, "hold": self.hold,
             "step_info": STEP_INFO, "notice": self.notice,
+            "rec_dir": str(self.last_rec_dir) if self.last_rec_dir else None,
         })
 
     def command(self, cmd):
@@ -117,7 +120,20 @@ class Engine(threading.Thread):
                 self.status, self.status_msg = "error", f"{type(e).__name__}: {e}"
                 self.connected, self.next_try = False, t + 3
             self._halt.wait(max(0.0, TICK - (time.perf_counter() - t)))
+        self._rec_stop()
         self.source.stop()
+
+    # ---- session recording ---------------------------------------------------
+    def _rec_start(self):
+        if self.rec:
+            return
+        self.rec = Recorder(self.data_dir, self.fs, self.source.name, self.mains)
+        self.last_rec_dir = self.rec.dir.resolve()
+
+    def _rec_stop(self):
+        if self.rec:
+            rec, self.rec = self.rec, None
+            rec.close()
 
     def _reset_link(self):
         self.total, self.lost = 0, 0
@@ -177,10 +193,23 @@ class Engine(threading.Thread):
                 k = int(np.argmax(self.p_smooth))
                 msg["pred"] = {"label": self.model.names[k], "conf": round(float(self.p_smooth[k]), 3),
                                "probs": np.round(self.p_smooth, 3).tolist()}
+            if self.rec:
+                pr, pd = self.proto, msg["pred"]
+                try:
+                    self.rec.write(chunk, activity=self.rec.activity, prompt=pr["steps"][pr["i"]]["label"] if pr else "",
+                                   phase=pr["phase"] if pr else "",
+                                   pred=pd["label"] if pd else "", conf=pd["conf"] if pd else None)
+                except OSError as e:
+                    self._rec_stop()
+                    self.notice = f"Recording stopped: could not write to disk ({e})."
+                    self._broadcast(self._state_json())
 
         if self.proto:
             self._advance_proto(now)
         msg["status"], msg["status_msg"] = self.status, self.status_msg
+        msg["rec"] = self.rec and {"dir": str(self.rec.dir.resolve()), "secs": round(self.rec.seconds, 1),
+                                   "activity": self.rec.activity,
+                                   "markers": self.rec.n_markers}
         msg["link"] = {"rate": round(self.rate, 1), "battery": self.battery,
                        "loss_pct": round(100 * self.lost / max(1, self.lost + self.total), 3)}
         p = self.proto
@@ -220,6 +249,22 @@ class Engine(threading.Thread):
             self.notice = ""
             if op == "cancel":
                 self._abort_proto("")
+            elif op == "rec_start":
+                self._rec_start()
+                self._broadcast(self._state_json())
+            elif op == "rec_stop":
+                self._rec_stop()
+                self._broadcast(self._state_json())
+            elif op == "activity":
+                if self.rec:
+                    act = re.sub(r"[^\w ]", "", str(cmd.get("label", "")))[:40].strip().replace(" ", "_")
+                    if act != self.rec.activity:
+                        self.rec.activity = act
+                        self.rec.marker(f"activity -> {act or '(none)'}")
+            elif op == "marker":
+                text = str(cmd.get("text", "")).strip()[:200]
+                if self.rec and text:
+                    self.rec.marker(text)
             elif op == "pose":
                 self.source.hint(str(cmd.get("label", "rest")))
             elif op == "mode" and cmd.get("mode") in ("emg", "impedance", "test"):

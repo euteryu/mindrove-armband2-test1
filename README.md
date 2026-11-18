@@ -37,6 +37,13 @@ internet), then `run.bat`. By hand: `python -m venv .venv`, then
 - **Gestures**: pick gestures, hold each one when prompted, and it trains a model, shows
   how well it tells them apart, then recognises them live. Saved under `data/models/`.
 
+**Recording** (panel above the tabs, works on every screen): saves every sample to
+`data/sessions/<date_time>/signals.csv` as it arrives: raw EMG (8 channels, unfiltered),
+accelerometer, gyroscope, the band's packet counter, the **activity** label you click,
+what the app was prompting (during a check or training) and what the recogniser guessed.
+Notes you type go to `markers.csv`; `meta.json` describes every column. Roughly 0.5 GB per
+hour of CSV.
+
 ## How it is put together
 
 ```
@@ -44,6 +51,7 @@ emg/source.py     talks to the band (official SDK), or simulates one
 emg/dsp.py        filters and features
 emg/health.py     device-check verdicts
 emg/gestures.py   the classifier
+emg/recorder.py   continuous session recording to CSV
 emg/engine.py     background loop tying it together; no UI code
 app.py            small web server + web/index.html (the UI)
 run_headless.py   recognition with no screen: the shape of the on-board wearable

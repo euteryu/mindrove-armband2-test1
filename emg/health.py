@@ -7,7 +7,7 @@ channel vs. the other channels) so they do not depend on exact unit scaling.
 import numpy as np
 from scipy import signal
 
-from .dsp import rms
+from .dsp import rms, WIN, HOP
 
 PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 ACTIVE_STEPS = ("fist", "wrist_out", "wrist_in")
@@ -18,17 +18,49 @@ def _worst(items):
     return max((i["verdict"] for i in items), key=_RANK.get, default=PASS)
 
 
+def _robust_rms(x, keep=None):
+    """Median of 200 ms window RMS: a short burst (a twitch, a bump of the band)
+    cannot dominate it the way it dominates one RMS over the whole step.
+    keep: optional boolean mask of samples to use."""
+    if keep is not None and keep.sum() >= WIN:
+        x = x[:, keep]
+    starts = range(0, max(x.shape[1] - WIN, 0) + 1, HOP)
+    return np.median(np.array([rms(x[:, s:s + WIN]) for s in starts]), axis=0)
+
+
+def _motion(x, blk):
+    """Per-sample motion level: max-over-axes std of the IMU signal in blocks of blk samples."""
+    n = x.shape[1]
+    out = np.zeros(n)
+    for s in range(0, n, blk):
+        out[s:s + blk] = np.std(x[:, s:s + blk], axis=1).max() if x[:, s:s + blk].shape[1] > 1 else 0
+    return out
+
+
 def analyze(phases, link, fs, mains):
     """phases: {label: {"raw": (8,n), "filt": (8,n), "acc": (3,n), "gyro": (3,n)}}
     link: {"rate", "loss_pct", "battery"} measured over the whole check."""
     rest = phases["rest"]
     n_ch = rest["raw"].shape[0]
-    rest_rms = rms(rest["filt"])
-    act_rms = {k: rms(phases[k]["filt"]) for k in ACTIVE_STEPS if k in phases}
+    # The rest baseline is only valid while the arm is actually still. Find the
+    # moving parts of the rest step from the gyroscope and leave them out.
+    blk = fs // 2
+    gmot = _motion(rest["gyro"], blk)
+    if "rotate" in phases:
+        moving_level = np.median(_motion(phases["rotate"]["gyro"], blk))
+        thr = 0.2 * moving_level if moving_level > 0 else np.inf
+    else:
+        thr = 10 * max(gmot.min(), 1e-9)
+    still = gmot <= max(thr, 3 * gmot.min())
+    rest_moved = bool((~still).any())
+    rest_still_s = still.sum() / fs
+    rest_rms = _robust_rms(rest["filt"], still)
+    act_rms = {k: _robust_rms(phases[k]["filt"]) for k in ACTIVE_STEPS if k in phases}
     best = np.max(np.array(list(act_rms.values())), axis=0)
     best_step = np.array(list(act_rms))[np.argmax(np.array(list(act_rms.values())), axis=0)]
 
-    f, p = signal.welch(rest["raw"], fs, nperseg=min(fs, rest["raw"].shape[1]), axis=1)
+    raw_still = rest["raw"][:, still] if still.sum() >= fs else rest["raw"]
+    f, p = signal.welch(raw_still - raw_still.mean(1, keepdims=True), fs, nperseg=min(fs, raw_still.shape[1]), axis=1)
     hum = p[:, np.abs(f - mains) <= 2].sum(1) / np.maximum(p[:, f >= 10].sum(1), 1e-12)
 
     channels = []
@@ -79,12 +111,17 @@ def analyze(phases, link, fs, mains):
     b = link.get("battery")
     if b is not None:
         dev("Battery", PASS, f"{b:.2f}", "Raw value reported by the band (shown for reference, not judged).")
+    if rest_moved:
+        dev("Still at rest", WARN if rest_still_s >= 2 else FAIL, f"{rest_still_s:.1f} s still",
+            "The arm moved during the rest step (seen on the gyroscope); only the still part was used "
+            "as the baseline." + ("" if rest_still_s >= 2 else " Too little was still: rerun and keep the "
+                                  "arm relaxed and motionless during rest."))
     if "rotate" in phases:
         for key, label in (("acc", "Accelerometer"), ("gyro", "Gyroscope")):
             x = phases["rotate"][key]
-            still = phases["rest"][key]
-            moved = float(np.std(x, axis=1).max())
-            base = float(np.std(still, axis=1).max())
+            base_x = phases["rest"][key][:, still] if still.sum() > 1 else phases["rest"][key]
+            moved = float(np.median(_motion(x, blk)))
+            base = float(np.median(_motion(base_x, blk)))
             if np.all(x == 0) or moved == 0:
                 dev(label, FAIL, "no data", "All zeros while rotating the arm.")
             elif moved > 3 * base:

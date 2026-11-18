@@ -92,6 +92,25 @@ ol.steps{margin:6px 0 14px;padding-left:22px}
   <button class="btn ghost" style="margin-top:10px" onclick="post({op:'cancel'})">Cancel</button>
 </section>
 
+<section id="recCard" class="card" style="margin:12px 20px 0">
+  <div class="row" style="justify-content:space-between">
+    <div class="row">
+      <button class="btn" id="recBtn" onclick="recToggle()">● Start recording</button>
+      <span id="recStatus" class="small dim">Not recording. Recording saves every sample to the laptop.</span>
+    </div>
+  </div>
+  <div id="recCtl" class="hide" style="margin-top:10px">
+    <div class="small"><b>What are you doing now?</b> <span class="dim">Click when you start an action. Every sample is tagged with it until you click another.</span></div>
+    <div id="actChips" class="row" style="gap:6px;margin:6px 0"></div>
+    <div class="row">
+      <input id="actNew" placeholder="other activity, e.g. typing" maxlength="40" style="flex:1;min-width:0">
+      <button class="btn ghost" onclick="setAct($('actNew').value)">Set activity</button>
+      <input id="markNew" placeholder="note, e.g. band slipped" maxlength="200" style="flex:1;min-width:0">
+      <button class="btn ghost" onclick="addMark()">Add note</button>
+    </div>
+  </div>
+</section>
+
 <nav>
   <button data-tab="live" class="on">Live signal</button>
   <button data-tab="check">Device check</button>
@@ -227,6 +246,35 @@ $('modeSel').onchange = e => post({op: 'mode', mode: e.target.value});
 $('gestNew').onkeydown = e => { if (e.key === 'Enter') addGest(e.target.value); };
 $('repsSel').onchange = $('holdSel').onchange = renderGest;
 
+/* ---------- session recording ---------- */
+let rec = null;
+function recToggle() { post({op: rec ? 'rec_stop' : 'rec_start'}); }
+function setAct(a) { post({op: 'activity', label: a}); $('actNew').value = ''; }
+function addMark() { const t = $('markNew').value.trim(); if (t) post({op: 'marker', text: t}); $('markNew').value = ''; }
+$('actNew').onkeydown = e => { if (e.key === 'Enter') setAct($('actNew').value); };
+$('markNew').onkeydown = e => { if (e.key === 'Enter') addMark(); };
+function renderRec(r) {
+  const was = !!rec; rec = r;
+  $('recBtn').textContent = r ? '■ Stop recording' : '● Start recording';
+  $('recBtn').style.background = r ? css('--bad') : '';
+  $('recCtl').classList.toggle('hide', !r);
+  if (r) {
+    const m = Math.floor(r.secs / 60), s = Math.floor(r.secs % 60);
+    $('recStatus').replaceChildren(el('b', {}, `REC ${m}:${String(s).padStart(2, '0')}`),
+      ` · activity: ${r.activity ? nice(r.activity) : '(none set)'} · ${r.markers} note(s) · saving to ${r.dir}`);
+    const acts = [...new Set([...(S ? S.gestures : []), 'rest'])];
+    const key = acts.join() + '|' + r.activity;
+    if ($('actChips').dataset.key !== key) {
+      $('actChips').dataset.key = key;
+      $('actChips').replaceChildren(
+        ...acts.map(g => el('button', {class: 'chip' + (g === r.activity ? ' on' : ''), onclick: () => setAct(g)}, emoji(g) + ' ' + nice(g))),
+        el('button', {class: 'chip' + (!r.activity ? ' on' : ''), onclick: () => setAct('')}, '— none'));
+    }
+  } else {
+    $('recStatus').textContent = S && S.rec_dir ? `Not recording. Last recording saved in ${S.rec_dir}` : 'Not recording. Recording saves every sample to the laptop.';
+  }
+}
+
 /* ---------- server stream ---------- */
 const es = new EventSource('/events');
 es.onmessage = ev => { const m = JSON.parse(ev.data); m.t === 'state' ? onState(m) : onTick(m); };
@@ -275,6 +323,8 @@ function onTick(m) {
   if (m.imp) $('impVals').replaceChildren(...m.imp.map((v, i) => el('div', {}, `Value ${i + 1}: `, el('b', {}, String(v)))));
   renderProto(m.proto);
   renderPred(m.pred, m.proto);
+  renderRec(m.rec);
+  $('recBtn').disabled = !m.rec && !streaming;
 }
 
 function renderBanner(m) {
