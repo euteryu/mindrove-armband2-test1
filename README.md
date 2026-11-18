@@ -5,6 +5,8 @@ Built on MindRove's official Python SDK. Background findings are in
 [docs/LOGBOOK.md](docs/LOGBOOK.md).
 
 **Testing with the real band? Follow [docs/TESTING.md](docs/TESTING.md)** step by step.
+**How does it all work** (connection, filtering, device check, gesture classifier,
+recording)? Read [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md).
 
 ## Run it
 
