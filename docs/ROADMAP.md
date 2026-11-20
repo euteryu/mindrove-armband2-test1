@@ -34,7 +34,7 @@ wear-on gesture, not the current ~1 min retrain.
 | Checkpoint A: is spiderman separable within one wear? | **next: waiting for 2 real wears** |
 | 1. Data: ~8 wears over 2-3 days | not started |
 | Checkpoint B: pick the approach from offline results | not started |
-| 2. Live: wear-on alignment, confidence gate, dwell | not started |
+| 2. Live: wear-on alignment, confidence gate, dwell | **built** (quick start / quick calibrate, simulator-tested); tuning waits for your wears |
 | 3. Map gestures to actions | not started |
 
 ## How to record a wear (you)
@@ -83,6 +83,26 @@ all on one day). Fully remove the band between wears; rotate it on purpose somet
 Wear-on flow in the app → rotation shift → classify → reject if confidence low → fire
 only after the class holds ~150-250 ms. Also works headless (`run_headless.py`).
 
+## Evidence so far: real public data (GRABMyo)
+
+10 people × 3 days, forearm ring of 8 channels, electrodes re-applied each day; tested on
+a day the model never saw. Gel electrodes: expect our dry band to do somewhat worse.
+Our stand-in for Spider-Man is "thumb + little finger extension"; "other" = 6 deliberate
+contractions (pinch, thumb adduction, index ext., wrist ext., supination, pronation),
+which are much harder to reject than everyday movement.
+
+| Setup (neural net, td4) | Window acc | Gestures caught* | False/min* |
+|---|---|---|---|
+| Same day (today's per-wear retrain) | 92 % | 92 % | 0.8 |
+| Other days, band turned, **no alignment** | 41 % | – | – |
+| Other days + quick start (6 s: align + scale) | 81-82 % | 76 % | 1.5 |
+| Other days + quick calibrate (~35 s) | 87 % | **84 %** | **1.0** |
+| Same, but LDA instead of the network | 88 % | 52-63 % | 0.9 |
+
+\* decider at threshold 0.9, 400 ms hold. Rotation was detected correctly on 30 of 30
+turned wears. Weakest class across days: fist (70 %); best: rest and Spider-Man
+stand-in (94-95 %). Reports: `data/public/grabmyo/eval/`.
+
 ## Decisions
 
 | Date | Decision | Why |
@@ -93,6 +113,10 @@ only after the class holds ~150-250 ms. Also works headless (`run_headless.py`).
 | 2026-11-20 | Rotation alignment from a short wear-on gesture before any deep learning | Cheapest method with published success on 7-8 pod rings |
 | 2026-11-20 | No Kaggle GPU for now | Data is tiny (8 ch × 100 samples per window); limit is number of wears, not compute |
 | 2026-11-20 | Test spiderman first (Checkpoint A) | Finger-level gesture overlapping open and fist; riskiest class |
+| 2026-11-20 | Live model = small neural net (numpy MLP) on td4 features, align + scale | GRABMyo: same window accuracy as LDA but catches 84 % vs 52-63 % of gestures at the same ~1 false/min |
+| 2026-11-20 | Live firing rule 0.9 / 400 ms | Best catch rate at ~1 false/min on GRABMyo |
+| 2026-11-20 | Drop rotation-copy augmentation | Hurt on real data (one pod = 45°, too coarse); alignment alone recovers 41 % → 82 % |
+| 2026-11-20 | Offer quick calibrate (~35 s) next to quick start (6 s) | +5-8 points; zero-calibration alone is ~76 % caught, probably below what you want |
 
 ## Prior work this plan rests on
 
@@ -127,3 +151,11 @@ Newest at the bottom. One line per meaningful step; results with numbers.
   (random rotation + per-pod gain) rotation was estimated right on 5 of 5 and
   +align+norm recovered within-wear accuracy (pooled 69% → 100%). **This proves the
   code, not the band**: the simulator is far easier than real muscle. Smoke test 18/18.
+- 2026-11-20: Phase 2 groundwork: cross-wear model (`emg/crosswear.py`) trained in the
+  background on all wears; Quick start / Quick calibrate buttons; live display shows what
+  would fire. Numpy MLP (`emg/mlp.py`). Decider now releases a gesture when its
+  probability drops below 0.5 (it could get stuck when switching gesture to gesture).
+  GRABMyo checker `tools/grabmyo.py`; results in the table above. Smoke test 24/24.
+- Expected outcome for the band, judged from GRABMyo (an estimate, not measured):
+  same-wear ~85-92 %, quick calibrate ~80-87 %, quick start alone ~70-80 %. Spider-Man
+  itself is still untested; it decides Checkpoint A.

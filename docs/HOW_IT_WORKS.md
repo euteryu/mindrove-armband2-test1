@@ -211,6 +211,36 @@ retrain ([ROADMAP.md](ROADMAP.md)). The unit of data is a **wear session**: one 
 - Saved to `data/wears/<date_time>/` (`wear.npz`: raw + filtered signal per step;
   `meta.json`: steps, your pod note). Simulated wears: `tools/sim_wears.py`.
 
+### Using it after putting the band on (`emg/crosswear.py`)
+
+Every saved wear session feeds one **cross-wear model** (a small neural network, see
+below), trained in the background at start-up and after each new wear session.
+
+- **Quick start (6 s)**: the two reference holds. The app finds how far the band is
+  turned compared with your saved wears and how strong each pod is today, then rotates
+  and scales the live signal to match. Shown as "band turned N pods, match 0.xx"; a
+  match under 0.5 means the holds did not look like earlier wears: redo them.
+- **Quick calibrate (~35 s)**: quick start plus one 3 s hold of each gesture, added to
+  the training data (×3 weight) and the network is re-trained (a few seconds).
+- The big symbol on the Gestures tab is what **would fire** (decider rule), not the raw
+  top guess; the line below it shows the top guess and which model is in use.
+
+### The neural network (`emg/mlp.py`)
+
+Two hidden layers of 64 units, written in plain numpy (no PyTorch), so it runs as-is on
+a Raspberry Pi. Input: the 32 `td4` features of a 200 ms window, after rotation and
+strength scaling. It beats LDA mainly at rejecting junk: LDA gives each class one
+average pattern, but "other" is many different movements, and a hidden layer can carve
+out several regions for it. Classes are weighted equally regardless of how much data
+each has; dropout 0.2; 40 passes over the data.
+
+### Checked on real public data first (`tools/grabmyo.py`)
+
+Before your own wears exist, the same comparison runs on GRABMyo (PhysioNet, CC-BY 4.0):
+43 people × 3 days, a forearm ring of 8 channels, electrodes re-applied each day.
+Gel electrodes at 2048 Hz, so cleaner than the band's dry pods: treat its numbers as an
+upper bound for us. Downloaded parts live in `data/public/grabmyo/` (not in git).
+
 ## 7. Session recording (`emg/recorder.py`)
 
 The Recording panel above the tabs saves **every sample** as it arrives, on any screen.

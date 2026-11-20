@@ -25,6 +25,10 @@ from .recorder import Recorder
 TICK = 0.05
 TRIM_START = 0.8   # seconds dropped from the start of each hold (reaction time)
 TRIM_END = 0.2
+# Firing rule for live recognition: smoothed probability >= 0.9 for 8 windows (400 ms).
+# Chosen on GRABMyo (10 people, unseen day): best catch rate at about 1 false trigger/min
+# for the neural network (docs/ROADMAP.md, 2026-11-20).
+LIVE_THRESHOLD, LIVE_DWELL = 0.9, 8
 
 STEP_INFO = {
     "rest": ("😌", "Relax. Let your hand and forearm go completely limp."),
@@ -203,7 +207,7 @@ class Engine(threading.Thread):
                 else:
                     using, names, p = "wear", self.model.names, self.model.proba(features(self.ring))
                 if self.decider is None or self.decider.names != names:
-                    self.decider = Decider(names)
+                    self.decider = Decider(names, threshold=LIVE_THRESHOLD, dwell=LIVE_DWELL)
                 active, fired = self.decider.step(p)
                 ps = self.decider.p
                 k = int(np.argmax(ps))
