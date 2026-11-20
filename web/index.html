@@ -179,6 +179,7 @@ ol.steps{margin:6px 0 14px;padding-left:22px}
       <h2>Live recognition</h2>
       <div id="predBig">·</div>
       <div id="predLabel" class="dim">No model yet</div>
+      <div id="predSub" class="small dim" style="text-align:center"></div>
       <div class="bar" style="max-width:420px;margin:10px auto 14px"><i id="predConf"></i></div>
       <div id="predProbs"></div>
     </div>
@@ -192,7 +193,9 @@ ol.steps{margin:6px 0 14px;padding-left:22px}
       <input id="wearNote" placeholder="e.g. 0, 2, 5 or a short note" maxlength="200" style="width:100%;margin-top:4px"></label>
     <div class="row" style="margin-top:10px">
       <button class="btn" id="wearBtn" onclick="post({op: 'wear', note: $('wearNote').value})">Start wear session</button>
+      <button class="btn ghost" id="wearonBtn" onclick="post({op: 'wearon'})">Quick start (6 s)</button>
     </div>
+    <div class="small" id="crossInfo" style="margin-top:8px"></div>
     <div class="small dim" id="wearHint" style="margin-top:8px"></div>
   </div>
   <div class="card">
@@ -304,6 +307,9 @@ function onState(m) {
   $('notice').textContent = m.notice || '';
   $('notice').classList.toggle('hide', !m.notice);
   renderGest(); renderReport(); renderModel(); renderSim();
+  $('crossInfo').textContent = !m.cross ? 'Quick start becomes available after your first wear session.'
+    : `Cross-wear model: ${m.cross.wears} saved wear(s).` + (m.align ? ` In use: band turned ${m.align.shift} pod(s), match ${m.align.match.toFixed(2)}.`
+    : ' Press Quick start after putting the band on to use it.');
 }
 
 function setStatus(kind, text) {
@@ -321,6 +327,7 @@ function onTick(m) {
   $('stBatt').textContent = bt == null || !streaming ? '–' : bt <= 5 ? bt.toFixed(2) + ' V' : Math.round(bt) + ' %';
   renderBanner(m);
   $('checkBtn').disabled = $('trainBtn').disabled = $('wearBtn').disabled = !streaming || !!m.proto;
+  $('wearonBtn').disabled = !streaming || !!m.proto || !(S && S.cross);
   $('checkHint').textContent = $('trainHint').textContent = $('wearHint').textContent =
     !streaming ? 'Available once data is arriving from the armband.' : m.proto ? 'A recording is running.' : '';
 
@@ -410,16 +417,21 @@ function train() {
   post({op: 'train', gestures: gest, reps: +$('repsSel').value, hold: +$('holdSel').value});
 }
 function renderPred(pred, proto) {
-  const names = S && S.model ? S.model.names : [];
+  const names = pred && pred.names ? pred.names : S && S.model ? S.model.names : [];
   if (!pred) {
+    $('predSub').textContent = '';
     $('predBig').textContent = '·';
     $('predLabel').textContent = proto ? 'Paused while recording' : names.length ? 'Waiting for data' : 'No model yet. Teach it your gestures first.';
     $('predLabel').className = 'dim'; $('predConf').style.width = '0';
     $('predProbs').replaceChildren();
     return;
   }
-  $('predBig').textContent = emoji(pred.label);
-  $('predLabel').textContent = nice(pred.label);
+  // Big display = what would actually fire (confidence + hold rule), not the raw top guess.
+  const shown = pred.active || 'rest';
+  $('predBig').textContent = emoji(shown);
+  $('predLabel').textContent = nice(shown);
+  $('predSub').textContent = (pred.using === 'cross' ? 'Cross-wear model' : 'Model from this wear') +
+    ` · top guess ${nice(pred.label)} ${Math.round(100 * pred.conf)}%`;
   $('predLabel').className = '';
   $('predConf').style.width = (100 * pred.conf) + '%';
   const rows = $('predProbs');

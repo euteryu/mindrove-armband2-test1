@@ -163,9 +163,10 @@ def windows(wear, kind="rms_wl", shift=0, norm=None):
         if s["kind"] == "ref":
             continue
         filt = np.roll(seg["filt"], -shift, axis=0) if shift else seg["filt"]
-        if s["kind"] == "junk":
+        if s["kind"] == "junk" and s.get("group", -1) < 0:
+            # One long junk recording: cut into a piece per group (unique hold ids).
             pieces = np.array_split(np.arange(filt.shape[1]), N_GROUPS)
-            parts = [(filt[:, idx], g, 1000 + g) for g, idx in enumerate(pieces)]
+            parts = [(filt[:, idx], g, 100000 + i * 100 + g) for g, idx in enumerate(pieces)]
         else:
             parts = [(filt, s["group"], i)]
         for f, g, h in parts:

@@ -107,9 +107,24 @@ def main():
     wait_state(q, lambda m: m["t"] == "tick" and m["status"] == "streaming", 10)
     eng.command({"op": "wear", "note": "3"})
     m = wait_state(q, lambda m: m["t"] == "state" and m["model"] and "other" in m["model"]["names"], 120)
+    expect(m["cross"] and m["cross"]["wears"] == 1, "cross-wear model built from the saved wear")
+    wear.protocol_steps = full_steps
+
+    # 5. Put the band on "turned by 3 pods", quick start, recognition must follow.
+    eng.source.rotate = 3
+    eng.command({"op": "wearon"})
+    m = wait_state(q, lambda m: m["t"] == "state" and m["align"], 60)
+    expect(m["align"]["shift"] == 3, f"quick start finds the band turned 3 pods (found {m['align']['shift']})")
+    for pose in ("fist", "spiderman", "rest"):
+        eng.command({"op": "pose", "label": pose})
+        time.sleep(1.5)
+        while not q.empty():
+            q.get()
+        t = wait_state(q, lambda m: m["t"] == "tick" and m["pred"], 5)
+        got = t["pred"]["active"] or "rest"
+        expect(t["pred"]["using"] == "cross" and got == pose, f"turned band, cross-wear model: {pose} -> {got}")
     eng.stop()
     eng.join()
-    wear.protocol_steps = full_steps
     found = wear.find_wears(root)
     expect(len(found) == 1, "wear session saved")
     w = wear.Wear(found[0])

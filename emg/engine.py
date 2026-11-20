@@ -16,6 +16,8 @@ from pathlib import Path
 import numpy as np
 
 from . import health, wear
+from .crosswear import CrossWearModel
+from .decide import Decider
 from .dsp import HOP, WIN, StreamFilter, features, rms, window_features
 from .gestures import GestureModel
 from .recorder import Recorder
@@ -71,7 +73,9 @@ class Engine(threading.Thread):
         self.gestures, self.reps, self.hold = list(DEFAULT_GESTURES), 3, 4.0
         self.notice = ""
         self.rec, self.last_rec_dir = None, None
+        self.cross, self.align, self.decider = None, None, None
         self._load_model()
+        self._build_cross()
 
     # ---- pub/sub -------------------------------------------------------------
     def subscribe(self):
@@ -102,6 +106,8 @@ class Engine(threading.Thread):
             "gestures": self.gestures, "reps": self.reps, "hold": self.hold,
             "step_info": STEP_INFO, "notice": self.notice,
             "rec_dir": str(self.last_rec_dir) if self.last_rec_dir else None,
+            "cross": self.cross.summary() if self.cross else None,
+            "align": {"shift": self.align["shift"], "match": self.align["match"]} if self.align else None,
         })
 
     def command(self, cmd):
@@ -189,12 +195,19 @@ class Engine(threading.Thread):
             if self.proto:
                 if self.proto["phase"] == "hold":
                     self.proto["data"][self.proto["i"]].append((chunk, filt))
-            elif self.model and self.mode == "emg":
-                p = self.model.proba(features(self.ring))
-                self.p_smooth = p if self.p_smooth is None else 0.6 * self.p_smooth + 0.4 * p
-                k = int(np.argmax(self.p_smooth))
-                msg["pred"] = {"label": self.model.names[k], "conf": round(float(self.p_smooth[k]), 3),
-                               "probs": np.round(self.p_smooth, 3).tolist()}
+            elif self.mode == "emg" and (self.model or (self.cross and self.align)):
+                if self.cross and self.align:
+                    using, names, p = "cross", self.cross.names, self.cross.proba(self.ring, self.align)
+                else:
+                    using, names, p = "wear", self.model.names, self.model.proba(features(self.ring))
+                if self.decider is None or self.decider.names != names:
+                    self.decider = Decider(names)
+                active, fired = self.decider.step(p)
+                ps = self.decider.p
+                k = int(np.argmax(ps))
+                msg["pred"] = {"label": names[k], "conf": round(float(ps[k]), 3),
+                               "probs": np.round(ps, 3).tolist(), "names": names, "using": using,
+                               "active": names[active] if active is not None else None, "fired": fired}
             if self.rec:
                 pr, pd = self.proto, msg["pred"]
                 try:
@@ -274,7 +287,9 @@ class Engine(threading.Thread):
                     self.source.set_mode(cmd["mode"])
                     self.mode = cmd["mode"]
                     self.filter.reset()
-            elif op in ("check", "train", "wear"):
+            elif op == "wearon" and not self.cross:
+                self.notice = "Record at least one wear session first; quick start lines today's wear up with those."
+            elif op in ("check", "train", "wear", "wearon"):
                 if self.status != "streaming":
                     self.notice = "No data from the armband yet, so nothing can be recorded."
                 elif self.proto:
@@ -287,6 +302,11 @@ class Engine(threading.Thread):
                     extra = {}
                     if op == "check":
                         steps = [_step(lbl, hold) for lbl, hold in CHECK_STEPS]
+                    elif op == "wearon":
+                        steps = [_step(g, h, prep=3.0 if i == 0 else 2.0, kind="ref")
+                                 for i, (g, h) in enumerate(wear.REF)]
+                        for st in steps:
+                            st["text"] = "Quick start. " + wear.POSITIONS[1][1] + " " + st["text"]
                     elif op == "wear":
                         steps = wear.protocol_steps(_step)
                         extra["note"] = str(cmd.get("note", "")).strip()[:200]
@@ -343,7 +363,7 @@ class Engine(threading.Thread):
         self.source.hint("rest")
         try:
             {"check": self._finish_check, "train": self._finish_training,
-             "wear": self._finish_wear}[p["kind"]](p, now)
+             "wear": self._finish_wear, "wearon": self._finish_wearon}[p["kind"]](p, now)
         except Exception as e:
             traceback.print_exc()
             self.notice = f"Could not process the recording ({type(e).__name__}: {e}). Please run it again."
@@ -390,7 +410,7 @@ class Engine(threading.Thread):
             y += [s["cls"]] * len(f)
             reps += [s["rep"]] * len(f)
         self.model = GestureModel(self.gestures, np.vstack(X), np.array(y), np.array(reps))
-        self.p_smooth = None
+        self.p_smooth, self.align, self.decider = None, None, None
         out = self.data_dir / "models"
         out.mkdir(parents=True, exist_ok=True)
         self.model.save(out / "latest.npz")
@@ -413,7 +433,26 @@ class Engine(threading.Thread):
         models.mkdir(parents=True, exist_ok=True)
         self.model.save(models / "latest.npz")
         self.model.save(models / time.strftime("model_%Y%m%d_%H%M%S.npz"))
+        self.align, self.decider = None, None
+        self._build_cross()
         self.notice = f"Wear session saved to {out.resolve()}"
+
+    def _finish_wearon(self, p, now):
+        segs = self._segments(p)
+        self.align = self.cross.calibrate([sg["filt"] for sg in segs])
+        self.decider = None
+        n = self.cross.summary()["wears"]
+        self.notice = (f"Quick start done: band turned {self.align['shift']} pod(s) from your saved wears "
+                       f"(pattern match {self.align['match']:.2f}). Using the model trained on {n} wear(s).")
+        if self.align["match"] < 0.5:
+            self.notice += " The match is weak: the band may sit differently, or a gesture was held loosely. Redo it if recognition is off."
+
+    def _build_cross(self):
+        try:
+            self.cross = CrossWearModel(self.data_dir) if wear.find_wears(self.data_dir) else None
+        except Exception:
+            traceback.print_exc()
+            self.cross = None
 
     def _load_model(self):
         path = self.data_dir / "models" / "latest.npz"
