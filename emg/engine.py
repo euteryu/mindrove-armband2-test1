@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import health
+from . import health, wear
 from .dsp import HOP, WIN, StreamFilter, features, rms, window_features
 from .gestures import GestureModel
 from .recorder import Recorder
@@ -33,6 +33,8 @@ STEP_INFO = {
     "thumbs_up": ("👍", "Thumbs up, other fingers curled."),
     "wrist_out": ("↗", "Bend your wrist back, so the back of your hand moves toward your forearm."),
     "wrist_in": ("↙", "Curl your wrist inward, palm toward your forearm."),
+    "spiderman": ("🤟", "Spider-Man: thumb, index and pinky straight out; middle and ring fingers folded onto the palm."),
+    "other": ("🌀", "Everyday movement that is not one of the gestures."),
     "rotate": ("🔄", "Relax your hand and slowly twist your forearm back and forth, like turning a door knob."),
 }
 CHECK_STEPS = [("rest", 6), ("fist", 5), ("wrist_out", 5), ("wrist_in", 5), ("rotate", 5)]
@@ -272,7 +274,7 @@ class Engine(threading.Thread):
                     self.source.set_mode(cmd["mode"])
                     self.mode = cmd["mode"]
                     self.filter.reset()
-            elif op in ("check", "train"):
+            elif op in ("check", "train", "wear"):
                 if self.status != "streaming":
                     self.notice = "No data from the armband yet, so nothing can be recorded."
                 elif self.proto:
@@ -282,12 +284,16 @@ class Engine(threading.Thread):
                         self.source.set_mode("emg")
                         self.mode = "emg"
                         self.filter.reset()
+                    extra = {}
                     if op == "check":
                         steps = [_step(lbl, hold) for lbl, hold in CHECK_STEPS]
+                    elif op == "wear":
+                        steps = wear.protocol_steps(_step)
+                        extra["note"] = str(cmd.get("note", "")).strip()[:200]
                     else:
                         steps = self._training_steps(cmd)
                     if steps:
-                        self._start_proto(op, steps)
+                        self._start_proto(op, steps, **extra)
             self._broadcast(self._state_json())
 
     def _training_steps(self, cmd):
@@ -306,11 +312,11 @@ class Engine(threading.Thread):
                 for r in range(self.reps) for k, g in enumerate(names)]
 
     # ---- guided protocols ----------------------------------------------------
-    def _start_proto(self, kind, steps):
+    def _start_proto(self, kind, steps, **extra):
         now = time.perf_counter()
         self.proto = {"kind": kind, "steps": steps, "i": 0, "phase": "prep",
                       "t_end": now + steps[0]["prep"], "data": [[] for _ in steps],
-                      "t0": now, "total0": self.total, "lost0": self.lost}
+                      "t0": now, "total0": self.total, "lost0": self.lost, **extra}
         self.source.hint(steps[0]["label"])
 
     def _abort_proto(self, why):
@@ -336,7 +342,8 @@ class Engine(threading.Thread):
         self.proto = None
         self.source.hint("rest")
         try:
-            (self._finish_check if p["kind"] == "check" else self._finish_training)(p, now)
+            {"check": self._finish_check, "train": self._finish_training,
+             "wear": self._finish_wear}[p["kind"]](p, now)
         except Exception as e:
             traceback.print_exc()
             self.notice = f"Could not process the recording ({type(e).__name__}: {e}). Please run it again."
@@ -389,11 +396,30 @@ class Engine(threading.Thread):
         self.model.save(out / "latest.npz")
         self.model.save(out / time.strftime("model_%Y%m%d_%H%M%S.npz"))
 
+    def _finish_wear(self, p, now):
+        segs = self._segments(p)
+        got, lost = self.total - p["total0"], self.lost - p["lost0"]
+        meta = {"started": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - (now - p["t0"]))),
+                "source": self.source.name, "fs": self.fs, "mains_hz": self.mains,
+                "note": p.get("note", ""), "loss_pct": round(100 * lost / max(1, got + lost), 3),
+                "classes": wear.CLASSES}
+        out = wear.save(self.data_dir, p["steps"], segs, meta)
+        # Train the live model on this wear alone, so it is usable straight away; the
+        # cross-wear models are built offline by tools/evaluate.py.
+        w = wear.windows(wear.Wear(out))
+        self.model = GestureModel(wear.CLASSES, w["X"], w["y"], w["group"])
+        self.p_smooth = None
+        models = self.data_dir / "models"
+        models.mkdir(parents=True, exist_ok=True)
+        self.model.save(models / "latest.npz")
+        self.model.save(models / time.strftime("model_%Y%m%d_%H%M%S.npz"))
+        self.notice = f"Wear session saved to {out.resolve()}"
+
     def _load_model(self):
         path = self.data_dir / "models" / "latest.npz"
         if path.exists():
             try:
                 self.model = GestureModel.load(path)
-                self.gestures = list(self.model.names)
+                self.gestures = [g for g in self.model.names if g != wear.OTHER]
             except Exception:
                 traceback.print_exc()

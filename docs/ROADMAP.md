@@ -30,12 +30,25 @@ wear-on gesture, not the current ~1 min retrain.
 
 | Phase | State |
 |---|---|
-| 0. Code: new gestures, protocol, wear-on step, evaluator | in progress |
-| Checkpoint A: is spiderman separable within one wear? | waiting for 2 wears |
+| 0. Code: new gestures, protocol, wear-on step, evaluator | **done** 2026-11-20 (simulator-tested) |
+| Checkpoint A: is spiderman separable within one wear? | **next: waiting for 2 real wears** |
 | 1. Data: ~8 wears over 2-3 days | not started |
 | Checkpoint B: pick the approach from offline results | not started |
 | 2. Live: wear-on alignment, confidence gate, dwell | not started |
 | 3. Map gestures to actions | not started |
+
+## How to record a wear (you)
+
+1. Once: put a small piece of tape on one pod. That is "pod 1" from now on.
+2. Put the band on, connect, run a **Device check** (45 s). Fix contact if anything FAILs.
+3. **Gestures** tab → **Wear session**. In the box, type how many pods it is from the
+   taped pod to the pod on top of your forearm (palm facing down, counting toward your
+   thumb). Press **Start** and follow the prompts (~5 min).
+4. Take the band **fully off** before the next wear. Rotate it on purpose now and then.
+5. After 2 wears: `.venv\Scripts\python tools\evaluate.py` and send me the output
+   (or just tell me, I run it). It also lands in `data/eval/<time>/report.txt`.
+
+Spider-Man = thumb, index and pinky straight out; middle and ring folded onto the palm 🤟.
 
 ## Plan
 
@@ -104,3 +117,13 @@ Newest at the bottom. One line per meaningful step; results with numbers.
 
 - 2026-11-20: Plan written. Real recordings from 11-17/11-18 are not on this laptop
   (`data/` holds only simulator output), so cross-wear data starts fresh.
+- 2026-11-20: Phase 0 built. Wear session in the app (`emg/wear.py`, ~4.5 min: 2
+  reference holds, 5 classes × 3 arm positions × 2 rounds × 4 s, 60 s junk). Junk is
+  its own internal class `other` (counts as rest), because one "rest" average cannot
+  cover both a limp hand and random movement. Decider (`emg/decide.py`): smoothed
+  probability ≥ 0.7 for 4 windows (200 ms) before firing. Evaluator
+  `tools/evaluate.py` compares within / pooled / +align / +align+norm / +aug / +calib
+  with both feature sets; `tools/sim_wears.py` makes test wears. On 5 simulated wears
+  (random rotation + per-pod gain) rotation was estimated right on 5 of 5 and
+  +align+norm recovered within-wear accuracy (pooled 69% → 100%). **This proves the
+  code, not the band**: the simulator is far easier than real muscle. Smoke test 18/18.

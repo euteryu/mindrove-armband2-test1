@@ -37,16 +37,30 @@ def rms(x, axis=-1):
     return np.sqrt(np.mean(np.square(x), axis=axis))
 
 
-def features(win):
-    """(n_ch, n) filtered window -> feature vector: log RMS and log waveform length
-    per channel. Amplitude says how hard a muscle fires, waveform length adds
-    frequency content; logs make the values roughly Gaussian for LDA."""
+FEATURE_KINDS = ("rms_wl", "td4")
+
+
+def features(win, kind="rms_wl"):
+    """(n_ch, n) filtered window -> feature vector.
+
+    rms_wl: log RMS and log waveform length per channel (16 values). Amplitude says how
+            hard a muscle fires, waveform length adds frequency content; logs make the
+            values roughly Gaussian for LDA. Used live.
+    td4:    rms_wl plus zero-crossing and slope-sign-change rates per channel (32
+            values), the classic Hudgins time-domain set. Evaluated offline first.
+    The first 8 values are always log RMS and the next 8 log waveform length."""
     r = rms(win)
-    wl = np.mean(np.abs(np.diff(win, axis=1)), axis=1)
-    return np.concatenate([np.log(r + 1e-3), np.log(wl + 1e-3)])
+    d = np.diff(win, axis=1)
+    wl = np.mean(np.abs(d), axis=1)
+    out = [np.log(r + 1e-3), np.log(wl + 1e-3)]
+    if kind == "td4":
+        zc = np.mean(win[:, 1:] * win[:, :-1] < 0, axis=1)
+        ssc = np.mean(d[:, 1:] * d[:, :-1] < 0, axis=1)
+        out += [zc, ssc]
+    return np.concatenate(out)
 
 
-def window_features(seg):
+def window_features(seg, kind="rms_wl"):
     """(n_ch, n) segment -> (n_windows, n_features)"""
-    out = [features(seg[:, s:s + WIN]) for s in range(0, seg.shape[1] - WIN + 1, HOP)]
+    out = [features(seg[:, s:s + WIN], kind) for s in range(0, seg.shape[1] - WIN + 1, HOP)]
     return np.array(out)

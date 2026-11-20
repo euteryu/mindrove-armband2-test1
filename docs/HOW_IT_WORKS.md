@@ -188,6 +188,29 @@ stores the training windows themselves, so the model is re-fitted when loaded.
 
 ---
 
+## 6b. Wear sessions and cross-wear evaluation (`emg/wear.py`, `tools/evaluate.py`)
+
+The goal is gestures that work every time the band goes on, not only right after a
+retrain ([ROADMAP.md](ROADMAP.md)). The unit of data is a **wear session**: one fixed
+~4.5 min recording per time you put the band on (Gestures tab → Wear session).
+
+- **Wear-on reference**: 3 s wrist in, 3 s open. Their pattern of which pods fire is
+  compared with earlier wears at all 8 rotations of the ring; the best match says how far
+  the band is turned. Their strength per pod is used to even out skin contact.
+- **Classes**: rest, fist, open, wrist in, Spider-Man, each held 4 s, in 3 arm positions
+  × 2 rounds (order shuffled). Each round is a "group" for testing.
+- **Junk**: 60 s of everyday movement, stored as the internal class `other`. It teaches
+  the model what must *not* trigger anything; `other` counts as rest.
+- **Decider** (`emg/decide.py`): only fires a gesture when its smoothed probability is
+  ≥ 0.7 for 4 windows in a row (200 ms).
+- The app trains a model on the new wear immediately (same LDA as section 6).
+- `tools/evaluate.py` tests on a wear the model never saw, trained on all the others,
+  with and without rotation alignment, strength normalisation, rotation augmentation and
+  a 30 s quick calibration. It reports window accuracy, hold accuracy (decider fired the
+  right gesture and nothing else) and false triggers per minute of junk.
+- Saved to `data/wears/<date_time>/` (`wear.npz`: raw + filtered signal per step;
+  `meta.json`: steps, your pod note). Simulated wears: `tools/sim_wears.py`.
+
 ## 7. Session recording (`emg/recorder.py`)
 
 The Recording panel above the tabs saves **every sample** as it arrives, on any screen.

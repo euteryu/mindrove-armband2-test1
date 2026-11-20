@@ -98,6 +98,7 @@ _POSES = {
     "wrist_out": [95, 60, 15, 6, 5, 6, 12, 75],
     "wrist_in": [8, 10, 30, 80, 90, 70, 25, 10],
     "pinch": [12, 10, 12, 40, 22, 60, 50, 18],
+    "spiderman": [50, 75, 55, 30, 28, 55, 60, 35],
     "rotate": [20, 25, 20, 20, 25, 20, 20, 25],
 }
 
@@ -112,14 +113,21 @@ def _pose_pattern(label):
 class SimSource:
     """Fake armband for trying the app without hardware. Faults can be planted on
     channels (1-based) to prove the health check catches them, e.g.
-    {"dead": [3], "hum": [5], "noisy": [7], "weak": [2], "drop": True}."""
+    {"dead": [3], "hum": [5], "noisy": [7], "weak": [2], "drop": True}.
+
+    rotate (pods) and gain (8 per-channel factors) imitate putting the band on again:
+    the ring sits turned and each pod touches the skin a bit differently. The pose
+    "other" is restless everyday movement: a new random muscle mix every ~0.4 s."""
 
     name = "Simulator"
     is_sim = True
     fs = FS
 
-    def __init__(self, faults=None, seed=None):
+    def __init__(self, faults=None, seed=None, rotate=0, gain=None):
         self.faults = faults or {}
+        self.rotate = int(rotate)
+        self.gain = np.ones(N_CH) if gain is None else np.asarray(gain, float)
+        self._junk, self._junk_until = np.zeros(N_CH), 0
         self.rng = np.random.default_rng(seed)
         self.mode = "emg"
         self.pose = "rest"
@@ -145,7 +153,15 @@ class SimSource:
         t = idx / self.fs
         self.n_done += n
 
-        target = _pose_pattern(self.pose)
+        if self.pose == "other":
+            if self.n_done >= self._junk_until:
+                mix = self.rng.dirichlet(np.ones(len(_POSES))) * self.rng.uniform(0, 0.7)
+                self._junk = mix @ np.array(list(_POSES.values()), float)
+                self._junk_until = self.n_done + int(self.rng.uniform(0.2, 0.6) * self.fs)
+            target = self._junk.copy()
+        else:
+            target = _pose_pattern(self.pose)
+        target = np.roll(target, self.rotate) * self.gain
         target[self._ch("weak")] *= 0.08
         frac = np.minimum(1.0, (np.arange(n) + 1) / (0.1 * self.fs))   # ~100 ms onset
         env = self.amp[:, None] + (target - self.amp)[:, None] * frac[None, :]
@@ -185,6 +201,13 @@ class SimSource:
             "battery": 4.02, "resistance": res,
             "raw": np.vstack([emg, acc, gyro, counter[None, :]]),
         }
+
+    def advance(self, n):
+        """Produce exactly the next n samples without waiting (offline data generation)."""
+        if self.t0 is None:
+            self.start()
+        self.t0 = time.perf_counter() - (self.n_done + n + 0.5) / self.fs
+        return self.read()
 
     def set_mode(self, mode):
         self.mode = mode
