@@ -74,6 +74,8 @@ class Engine(threading.Thread):
         self.notice = ""
         self.rec, self.last_rec_dir = None, None
         self.cross, self.align, self.decider = None, None, None
+        self.cross_busy = ""      # what the background trainer is doing, for the UI
+        self.cross_plain = None   # cross-wear model without today's calibration
         self._load_model()
         self._build_cross()
 
@@ -106,7 +108,7 @@ class Engine(threading.Thread):
             "gestures": self.gestures, "reps": self.reps, "hold": self.hold,
             "step_info": STEP_INFO, "notice": self.notice,
             "rec_dir": str(self.last_rec_dir) if self.last_rec_dir else None,
-            "cross": self.cross.summary() if self.cross else None,
+            "cross": self.cross.summary() if self.cross else None, "cross_busy": self.cross_busy,
             "align": {"shift": self.align["shift"], "match": self.align["match"]} if self.align else None,
         })
 
@@ -287,9 +289,10 @@ class Engine(threading.Thread):
                     self.source.set_mode(cmd["mode"])
                     self.mode = cmd["mode"]
                     self.filter.reset()
-            elif op == "wearon" and not self.cross:
-                self.notice = "Record at least one wear session first; quick start lines today's wear up with those."
-            elif op in ("check", "train", "wear", "wearon"):
+            elif op in ("wearon", "wearcal") and (not self.cross or self.cross_busy):
+                self.notice = ("The cross-wear model is still training, try again in a few seconds." if self.cross_busy
+                               else "Record at least one wear session first; quick start lines today's wear up with those.")
+            elif op in ("check", "train", "wear", "wearon", "wearcal"):
                 if self.status != "streaming":
                     self.notice = "No data from the armband yet, so nothing can be recorded."
                 elif self.proto:
@@ -302,11 +305,14 @@ class Engine(threading.Thread):
                     extra = {}
                     if op == "check":
                         steps = [_step(lbl, hold) for lbl, hold in CHECK_STEPS]
-                    elif op == "wearon":
+                    elif op in ("wearon", "wearcal"):
                         steps = [_step(g, h, prep=3.0 if i == 0 else 2.0, kind="ref")
                                  for i, (g, h) in enumerate(wear.REF)]
+                        if op == "wearcal":
+                            steps += [_step(g, 3.0, prep=2.0, kind="gesture", cls=k)
+                                      for k, g in enumerate(wear.GESTURES)]
                         for st in steps:
-                            st["text"] = "Quick start. " + wear.POSITIONS[1][1] + " " + st["text"]
+                            st["text"] = wear.POSITIONS[1][1] + " " + st["text"]
                     elif op == "wear":
                         steps = wear.protocol_steps(_step)
                         extra["note"] = str(cmd.get("note", "")).strip()[:200]
@@ -363,7 +369,8 @@ class Engine(threading.Thread):
         self.source.hint("rest")
         try:
             {"check": self._finish_check, "train": self._finish_training,
-             "wear": self._finish_wear, "wearon": self._finish_wearon}[p["kind"]](p, now)
+             "wear": self._finish_wear, "wearon": self._finish_wearon,
+             "wearcal": self._finish_wearon}[p["kind"]](p, now)
         except Exception as e:
             traceback.print_exc()
             self.notice = f"Could not process the recording ({type(e).__name__}: {e}). Please run it again."
@@ -439,20 +446,46 @@ class Engine(threading.Thread):
 
     def _finish_wearon(self, p, now):
         segs = self._segments(p)
-        self.align = self.cross.calibrate([sg["filt"] for sg in segs])
-        self.decider = None
-        n = self.cross.summary()["wears"]
-        self.notice = (f"Quick start done: band turned {self.align['shift']} pod(s) from your saved wears "
+        base = self.cross
+        if base.calibrated:            # always calibrate from the plain cross-wear model
+            base = self.cross_plain
+        refs = [sg["filt"] for st, sg in zip(p["steps"], segs) if st["kind"] == "ref"]
+        self.align = base.calibrate(refs)
+        self.cross, self.decider = base, None
+        n = base.summary()["wears"]
+        self.notice = (f"Band turned {self.align['shift']} pod(s) from your saved wears "
                        f"(pattern match {self.align['match']:.2f}). Using the model trained on {n} wear(s).")
         if self.align["match"] < 0.5:
             self.notice += " The match is weak: the band may sit differently, or a gesture was held loosely. Redo it if recognition is off."
+        if p["kind"] == "wearcal":
+            cal = [(sg["filt"], st["cls"]) for st, sg in zip(p["steps"], segs) if st["kind"] == "gesture"]
+            align = self.align
+            self._in_background("Adding today's calibration to the model",
+                                lambda: base.with_calibration(cal, align))
+            self.notice += " Re-training with today's calibration (a few seconds)."
 
     def _build_cross(self):
-        try:
-            self.cross = CrossWearModel(self.data_dir) if wear.find_wears(self.data_dir) else None
-        except Exception:
-            traceback.print_exc()
-            self.cross = None
+        if wear.find_wears(self.data_dir):
+            self._in_background("Training the cross-wear model on your saved wears",
+                                lambda: CrossWearModel(self.data_dir), plain=True)
+
+    def _in_background(self, what, make, plain=False):
+        """Train without blocking the acquisition loop; swap the model in when ready."""
+        self.cross_busy = what
+
+        def work():
+            try:
+                m = make()
+                if plain:
+                    self.cross_plain = m
+                self.cross, self.decider = m, None
+            except Exception:
+                traceback.print_exc()
+                self.notice = "Training the cross-wear model failed; see the console."
+            self.cross_busy = ""
+            self._broadcast(self._state_json())
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _load_model(self):
         path = self.data_dir / "models" / "latest.npz"

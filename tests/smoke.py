@@ -90,13 +90,13 @@ def main():
     eng.stop()
     eng.join()
 
-    # 4. Wear session, with holds and pauses shortened so it takes ~30 s.
+    # 4. Wear session, with holds and pauses shortened so it takes ~1.5 min.
     full_steps = wear.protocol_steps
 
     def short_steps(step_fn, seed=None):
         steps = full_steps(step_fn, seed)
         for st in steps:
-            st["prep"], st["hold"] = 0.3, (4.0 if st["kind"] == "junk" else 1.5)
+            st["prep"], st["hold"] = 0.3, (6.0 if st["kind"] == "junk" else 2.5)
         return steps
 
     wear.protocol_steps = short_steps
@@ -107,7 +107,8 @@ def main():
     wait_state(q, lambda m: m["t"] == "tick" and m["status"] == "streaming", 10)
     eng.command({"op": "wear", "note": "3"})
     m = wait_state(q, lambda m: m["t"] == "state" and m["model"] and "other" in m["model"]["names"], 120)
-    expect(m["cross"] and m["cross"]["wears"] == 1, "cross-wear model built from the saved wear")
+    m = wait_state(q, lambda m: m["t"] == "state" and m["cross"] and not m["cross_busy"], 120)
+    expect(m["cross"]["wears"] == 1, "cross-wear model built from the saved wear (in the background)")
     wear.protocol_steps = full_steps
 
     # 5. Put the band on "turned by 3 pods", quick start, recognition must follow.
@@ -123,6 +124,18 @@ def main():
         t = wait_state(q, lambda m: m["t"] == "tick" and m["pred"], 5)
         got = t["pred"]["active"] or "rest"
         expect(t["pred"]["using"] == "cross" and got == pose, f"turned band, cross-wear model: {pose} -> {got}")
+
+    # 6. Quick calibrate: re-trains in the background, then is marked calibrated.
+    eng.command({"op": "wearcal"})
+    m = wait_state(q, lambda m: m["t"] == "state" and m["cross"] and m["cross"]["calibrated"]
+                   and not m["cross_busy"], 120)
+    expect(m["align"]["shift"] == 3, "quick calibrate: rotation found and model re-trained with today's holds")
+    eng.command({"op": "pose", "label": "open"})
+    time.sleep(1.5)
+    while not q.empty():
+        q.get()
+    t = wait_state(q, lambda m: m["t"] == "tick" and m["pred"], 5)
+    expect((t["pred"]["active"] or "rest") == "open", f"calibrated model: open -> {t['pred']['active']}")
     eng.stop()
     eng.join()
     found = wear.find_wears(root)

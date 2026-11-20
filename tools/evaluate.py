@@ -11,7 +11,7 @@ Every method is tested on rounds 2-6 of a wear (groups 1-5). Methods:
   +align        ... channels rotated to line up, using the 2 wear-on reference holds
   +align+norm   ... and per-channel strength scaled from the same reference holds
   +aug          ... and training copies rotated one pod either way
-  +calib        ... plus round 1 of the test wear (a ~30 s quick calibration)
+  +calib        +align+norm plus round 1 of the test wear (a ~30 s quick calibration)
 
 Metrics:
   window acc    each 200 ms window classified on its own (junk excluded)
@@ -34,15 +34,22 @@ from emg import wear as W  # noqa: E402
 from emg.decide import Decider  # noqa: E402
 from emg.dsp import FEATURE_KINDS, HOP  # noqa: E402
 from emg.gestures import LDA  # noqa: E402
+from emg.mlp import MLP  # noqa: E402
 
 NG = len(W.GESTURES)        # 5 real classes; index NG is "other"
 TEST_GROUPS = list(range(1, W.N_GROUPS))
 METHODS = ["within", "pooled", "+align", "+align+norm", "+aug", "+calib"]
+# Decider settings (threshold, dwell windows) for the catch-vs-false-trigger trade-off.
+SWEEP = [(0.5, 2), (0.6, 3), (0.7, 4), (0.8, 6), (0.9, 8), (0.95, 12)]
+
+
+CLF = {"lda": LDA, "mlp": MLP}
+CLF_NAME = "lda"
 
 
 class Model:
     def __init__(self, X, y):
-        self.lda = LDA().fit(X, y)
+        self.lda = CLF[CLF_NAME]().fit(X, y)
 
     def proba(self, X):
         p = np.zeros((len(X), len(W.CLASSES)))
@@ -77,25 +84,35 @@ def score(model, t, args):
     dec = Decider(W.CLASSES, args.threshold, args.dwell)
     holds_ok, holds_n = np.zeros(NG), np.zeros(NG)
     false, junk_s = 0, 0.0
+    sweep = np.zeros((len(SWEEP), 2))      # per setting: gesture holds caught, false fires
+    decs = [Decider(W.CLASSES, th, dw) for th, dw in SWEEP]
     for h in np.unique(t["hold"]):
         m = t["hold"] == h
         fired = dec.run(P[m])
+        fs = [d.run(P[m]) for d in decs]
         if t["junk"][m][0]:
             false += len(fired)
             junk_s += m.sum() * HOP / W_FS
+            sweep[:, 1] += [len(f) for f in fs]
             continue
         c = int(t["y"][m][0])
         holds_n[c] += 1
         holds_ok[c] += (not fired) if c == 0 else (len(fired) > 0 and set(fired) == {c})
+        if c:
+            sweep[:, 0] += [len(f) > 0 and set(f) == {c} for f in fs]
     return {"conf": conf, "holds_ok": holds_ok, "holds_n": holds_n,
-            "false": false, "junk_s": junk_s}
+            "false": false, "junk_s": junk_s, "sweep": sweep}
 
 
 def summarise(rs):
     conf = sum(r["conf"] for r in rs)
     ok, n = sum(r["holds_ok"] for r in rs), sum(r["holds_n"] for r in rs)
     false, js = sum(r["false"] for r in rs), sum(r["junk_s"] for r in rs)
-    return {"window_acc": float(np.trace(conf) / conf.sum()),
+    sw = sum(r["sweep"] for r in rs)
+    return {"sweep": [{"threshold": th, "dwell": dw, "caught": float(sw[i, 0] / max(1, n[1:].sum())),
+                       "false_per_min": float(sw[i, 1] / max(1e-9, js / 60))}
+                      for i, (th, dw) in enumerate(SWEEP)],
+            "window_acc": float(np.trace(conf) / conf.sum()),
             "per_class": [float(conf[i, i] / max(1, conf[i].sum())) for i in range(NG)],
             "hold_acc": float(ok.sum() / max(1, n.sum())),
             "hold_per_class": [float(ok[i] / max(1, n[i])) for i in range(NG)],
@@ -150,7 +167,7 @@ def evaluate(wears, kind, args, log):
             res[name].append(score(Model(X, y), select(tw, test_mask(tw)), args))
         tw = cache.get(t, st, True)
         cal = tw["group"] == 0
-        parts = train(True, True, 1) + [(tw["X"][cal], tw["y"][cal])] * args.calib_weight
+        parts = train(True, True) + [(tw["X"][cal], tw["y"][cal])] * args.calib_weight
         X, y = stack(parts)
         res["+calib"].append(score(Model(X, y), select(tw, test_mask(tw)), args))
     return {m: summarise(r) for m, r in res.items() if r}, shifts, res
@@ -159,7 +176,7 @@ def evaluate(wears, kind, args, log):
 def _merge(rs):
     return {"conf": sum(r["conf"] for r in rs), "holds_ok": sum(r["holds_ok"] for r in rs),
             "holds_n": sum(r["holds_n"] for r in rs), "false": sum(r["false"] for r in rs),
-            "junk_s": sum(r["junk_s"] for r in rs)}
+            "junk_s": sum(r["junk_s"] for r in rs), "sweep": sum(r["sweep"] for r in rs)}
 
 
 def fmt(summary, shifts, per_wear, wears, kind):
@@ -176,6 +193,11 @@ def fmt(summary, shifts, per_wear, wears, kind):
             vals = [np.trace(r["conf"]) / r["conf"].sum() for r in rs]
             L.append(f"  {m:<13}" + "  ".join(f"{100*v:5.1f}" for v in vals))
     L.append("  wears        " + "  ".join(i[-5:] for i in ids))
+    L += ["", "Catch vs false triggers (gesture holds fired correctly / false fires per junk minute):"]
+    for m in ("within", "+align+norm", "+calib"):
+        if m in summary:
+            L.append(f"  {m:<13}" + "  ".join(f"{d['threshold']:.2f}/{d['dwell']}: {100*d['caught']:.0f}% {d['false_per_min']:.1f}"
+                                            for d in summary[m]["sweep"]))
     L += rotation_report(wears)
     L += ["", "Confusion of the best cross-wear method (rows = made, cols = recognised):"]
     cross = {m: s for m, s in summary.items() if m != "within"}
@@ -223,7 +245,10 @@ def main():
     ap.add_argument("--threshold", type=float, default=0.7)
     ap.add_argument("--dwell", type=int, default=4)
     ap.add_argument("--calib-weight", type=int, default=3)
+    ap.add_argument("--clf", default="lda", choices=list(CLF))
     args = ap.parse_args()
+    global CLF_NAME
+    CLF_NAME = args.clf
     paths = W.find_wears(args.data)
     if not paths:
         sys.exit(f"No wear sessions under {Path(args.data) / 'wears'}. Record one in the app first.")

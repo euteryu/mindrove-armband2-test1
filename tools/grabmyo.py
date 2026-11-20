@@ -99,7 +99,9 @@ def main():
     ap.add_argument("--threshold", type=float, default=0.7)
     ap.add_argument("--dwell", type=int, default=4)
     ap.add_argument("--calib-weight", type=int, default=3)
+    ap.add_argument("--clf", default="lda", choices=list(E.CLF))
     args = ap.parse_args()
+    E.CLF_NAME = args.clf
     rng = np.random.default_rng(0)
     tag = "rotated" if args.rotate else "natural"
     per_person = {k: [] for k in args.features}
@@ -130,7 +132,7 @@ def main():
 
     out = Path(args.out) / "eval" / f"{tag}_{time.strftime('%Y%m%d_%H%M%S')}"
     out.mkdir(parents=True, exist_ok=True)
-    L = [f"GRABMyo check ({tag}), {len(per_person[args.features[0]])} participants, "
+    L = [f"GRABMyo check ({tag}, classifier {args.clf}), {len(per_person[args.features[0]])} participants, "
          f"3 days each, leave-one-day-out, tested on trials 3-7", ""]
     for kind, sums in per_person.items():
         if not sums:
@@ -146,6 +148,13 @@ def main():
                      f"{100*np.mean([v['hold_acc'] for v in vals]):>6.0f}%"
                      f"{np.mean([v['false_per_min'] for v in vals]):>11.2f}   "
                      + "".join(f"{100*x:>9.0f}%" for x in pc))
+        L.append("Catch vs false triggers, mean over participants (threshold/dwell: caught %, false/min):")
+        for m in ("within", "+align+norm", "+calib"):
+            sw = [x[m]["sweep"] for x in sums if m in x]
+            if sw:
+                L.append(f"  {m:<13}" + "  ".join(
+                    f"{d['threshold']:.2f}/{d['dwell']}: {100*np.mean([q[i]['caught'] for q in sw]):.0f}% "
+                    f"{np.mean([q[i]['false_per_min'] for q in sw]):.1f}" for i, d in enumerate(sw[0])))
         L.append("")
     if rot_ok:
         L.append("Rotation estimate agreed with the true rotation on: " + ", ".join(rot_ok) + " (per participant)")

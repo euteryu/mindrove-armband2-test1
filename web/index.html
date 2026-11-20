@@ -193,7 +193,8 @@ ol.steps{margin:6px 0 14px;padding-left:22px}
       <input id="wearNote" placeholder="e.g. 0, 2, 5 or a short note" maxlength="200" style="width:100%;margin-top:4px"></label>
     <div class="row" style="margin-top:10px">
       <button class="btn" id="wearBtn" onclick="post({op: 'wear', note: $('wearNote').value})">Start wear session</button>
-      <button class="btn ghost" id="wearonBtn" onclick="post({op: 'wearon'})">Quick start (6 s)</button>
+      <button class="btn ghost" id="wearonBtn" onclick="post({op: 'wearon'})" title="Two reference holds: finds how the band sits today">Quick start (6 s)</button>
+      <button class="btn ghost" id="wearcalBtn" onclick="post({op: 'wearcal'})" title="Quick start plus one 3 s hold of each gesture, added to the model">Quick calibrate (35 s)</button>
     </div>
     <div class="small" id="crossInfo" style="margin-top:8px"></div>
     <div class="small dim" id="wearHint" style="margin-top:8px"></div>
@@ -307,8 +308,9 @@ function onState(m) {
   $('notice').textContent = m.notice || '';
   $('notice').classList.toggle('hide', !m.notice);
   renderGest(); renderReport(); renderModel(); renderSim();
-  $('crossInfo').textContent = !m.cross ? 'Quick start becomes available after your first wear session.'
-    : `Cross-wear model: ${m.cross.wears} saved wear(s).` + (m.align ? ` In use: band turned ${m.align.shift} pod(s), match ${m.align.match.toFixed(2)}.`
+  $('crossInfo').textContent = m.cross_busy ? m.cross_busy + '…'
+    : !m.cross ? 'Quick start becomes available after your first wear session.'
+    : `Cross-wear model: ${m.cross.wears} saved wear(s)${m.cross.calibrated ? ', calibrated today' : ''}.` + (m.align ? ` In use: band turned ${m.align.shift} pod(s), match ${m.align.match.toFixed(2)}.`
     : ' Press Quick start after putting the band on to use it.');
 }
 
@@ -327,7 +329,7 @@ function onTick(m) {
   $('stBatt').textContent = bt == null || !streaming ? '–' : bt <= 5 ? bt.toFixed(2) + ' V' : Math.round(bt) + ' %';
   renderBanner(m);
   $('checkBtn').disabled = $('trainBtn').disabled = $('wearBtn').disabled = !streaming || !!m.proto;
-  $('wearonBtn').disabled = !streaming || !!m.proto || !(S && S.cross);
+  $('wearonBtn').disabled = $('wearcalBtn').disabled = !streaming || !!m.proto || !(S && S.cross) || !!(S && S.cross_busy);
   $('checkHint').textContent = $('trainHint').textContent = $('wearHint').textContent =
     !streaming ? 'Available once data is arriving from the armband.' : m.proto ? 'A recording is running.' : '';
 
